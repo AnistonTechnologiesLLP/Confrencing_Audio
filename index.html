@@ -1,0 +1,1160 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Conferencing Audio Pipeline — Configurator</title>
+<style>
+  :root {
+    --bg:#0a0e18; --bg-grad:radial-gradient(1200px 600px at 80% -10%, #16203a 0%, #0a0e18 55%);
+    --surface:#121829; --surface2:#161d31; --surface3:#1d2740; --hover:#222d4a;
+    --border:#283250; --border-soft:#283250aa;
+    --text:#eef1fa; --muted:#9aa4c2; --faint:#69739a;
+    --accent:#6d8bff; --accent2:#9a6dff; --accent-press:#5a78f0; --accent-soft:#6d8bff1f;
+    --ok:#3ddc97; --warn:#f7c948; --err:#ff6b81;
+    --dante:#5fb6ff; --analog:#ffc06a;
+    --r:13px; --r-sm:9px;
+    --sh:0 6px 24px -8px #00000088;
+    --mono:ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+    --sans:ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  * { box-sizing:border-box; }
+  html,body { height:100%; }
+  body {
+    margin:0; background:var(--bg); background-image:var(--bg-grad); color:var(--text);
+    font:13.5px/1.5 var(--sans); overflow:hidden; -webkit-font-smoothing:antialiased;
+  }
+  button,input,select,textarea { font:inherit; color:var(--text); }
+  ::-webkit-scrollbar{width:10px;height:10px} ::-webkit-scrollbar-thumb{background:#2a3556;border-radius:8px;border:2px solid transparent;background-clip:content-box}
+  ::-webkit-scrollbar-thumb:hover{background:#374568} ::-webkit-scrollbar-track{background:transparent}
+
+  .app { height:100vh; display:flex; flex-direction:column; }
+
+  /* ---------- header ---------- */
+  header {
+    display:flex; align-items:center; gap:14px; padding:11px 18px;
+    border-bottom:1px solid var(--border); background:linear-gradient(180deg,#121a2e,#0d1322);
+    box-shadow:0 1px 0 #00000040; z-index:5;
+  }
+  .brand { display:flex; align-items:center; gap:11px; }
+  .logo { width:30px; height:30px; border-radius:9px; background:linear-gradient(135deg,var(--accent),var(--accent2));
+    display:grid; place-items:center; box-shadow:0 0 18px -2px var(--accent); flex:none; }
+  .logo svg { width:18px; height:18px; }
+  .brand h1 { font-size:14.5px; margin:0; font-weight:680; letter-spacing:.2px; }
+  .brand .sub { font-size:11px; color:var(--muted); margin-top:-1px; }
+  .hgroup { display:flex; align-items:center; gap:7px; }
+  .hgroup.right { margin-left:auto; }
+  .sep { width:1px; height:26px; background:var(--border); }
+
+  select.scenario { background:var(--surface2); border:1px solid var(--border); border-radius:9px; padding:7px 10px; }
+
+  /* ---------- buttons ---------- */
+  .btn { cursor:pointer; background:var(--surface3); border:1px solid var(--border); border-radius:9px;
+    padding:7px 12px; display:inline-flex; align-items:center; gap:7px; transition:.13s; white-space:nowrap; font-weight:520; }
+  .btn:hover { background:var(--hover); border-color:#3a4568; }
+  .btn:active { transform:translateY(1px); }
+  .btn:disabled { opacity:.4; cursor:not-allowed; }
+  .btn.primary { background:var(--accent); border-color:var(--accent); color:#08101f; font-weight:650; box-shadow:0 4px 14px -5px var(--accent); }
+  .btn.primary:hover { background:#7e99ff; }
+  .btn.ghost { background:transparent; }
+  .btn.sm { padding:5px 9px; border-radius:7px; font-size:12px; }
+  .btn.icon { padding:7px 9px; }
+  .btn svg { width:15px; height:15px; opacity:.9; }
+  .pill { display:inline-flex; align-items:center; gap:7px; padding:6px 13px; border-radius:999px; font-weight:650; font-size:12.5px; cursor:pointer; border:1px solid transparent; }
+  .pill.ok { background:#3ddc9722; color:var(--ok); border-color:#3ddc9755; }
+  .pill.bad { background:#ff6b8122; color:var(--err); border-color:#ff6b8155; }
+  .pill .dotpulse { width:8px; height:8px; border-radius:50%; background:currentColor; box-shadow:0 0 0 0 currentColor; }
+  .pill.bad .dotpulse { animation:pulse 1.6s infinite; }
+  @keyframes pulse { 0%{box-shadow:0 0 0 0 #ff6b8166} 70%{box-shadow:0 0 0 7px #ff6b8100} 100%{box-shadow:0 0 0 0 #ff6b8100} }
+
+  /* ---------- workspace ---------- */
+  .workspace { flex:1; display:flex; min-height:0; }
+  .stage { flex:1; display:flex; flex-direction:column; min-width:0; min-height:0; padding:14px; gap:12px; }
+  .stage-bar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .seg { display:flex; gap:3px; padding:4px; background:var(--surface); border:1px solid var(--border); border-radius:11px; }
+  .seg button { cursor:pointer; background:transparent; border:1px solid transparent; border-radius:8px; padding:7px 11px; color:var(--muted); display:inline-flex; gap:7px; align-items:center; transition:.12s; font-weight:540; }
+  .seg button:hover { color:var(--text); background:#ffffff0a; }
+  .seg button.active { background:var(--accent); color:#08101f; font-weight:650; border-color:var(--accent); box-shadow:0 3px 12px -4px var(--accent); }
+  .seg button svg { width:15px; height:15px; }
+  .stage-bar .grow { flex:1; }
+  .mini { display:flex; align-items:center; gap:6px; color:var(--muted); font-size:12px; }
+  .mini select { background:var(--surface2); border:1px solid var(--border); border-radius:8px; padding:6px 8px; }
+
+  .ctxbar { display:none; align-items:end; gap:10px; flex-wrap:wrap; padding:9px 12px;
+    background:var(--surface); border:1px dashed var(--border); border-radius:11px; }
+  .ctxbar.show { display:flex; }
+  .ctxbar .f { display:flex; flex-direction:column; gap:3px; }
+  .ctxbar label { font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; }
+  .ctxbar input, .ctxbar select { background:var(--surface2); border:1px solid var(--border); border-radius:8px; padding:6px 8px; }
+  .ctxbar input[type=number]{ width:74px; }
+  .ctxhint { align-self:center; color:var(--muted); font-size:11.5px; }
+  .radio { display:inline-flex; align-items:center; gap:6px; color:var(--text); font-size:12.5px; cursor:pointer; }
+  .radio input { accent-color:var(--accent); }
+
+  .canvas-wrap { flex:1; min-height:0; position:relative; border:1px solid var(--border); border-radius:var(--r);
+    overflow:hidden; background:#080b14; box-shadow:var(--sh); }
+  #stageCanvas { width:100%; height:100%; display:block; touch-action:none; cursor:crosshair; }
+  .stage-foot { display:flex; align-items:center; gap:14px; flex-wrap:wrap; color:var(--muted); font-size:11.5px; }
+  .legend { display:flex; gap:13px; flex-wrap:wrap; align-items:center; }
+  .legend span { display:inline-flex; align-items:center; gap:5px; }
+  .legend i { width:10px; height:10px; border-radius:3px; display:inline-block; }
+  .legend .line { width:16px; height:0; border-top:2px solid; border-radius:2px; }
+  #coord { margin-left:auto; font-family:var(--mono); }
+
+  /* ---------- inspector ---------- */
+  .inspector { width:430px; flex:none; border-left:1px solid var(--border); background:var(--surface);
+    display:flex; flex-direction:column; min-height:0; }
+  .tabs { display:flex; padding:0 8px; border-bottom:1px solid var(--border); background:var(--surface2); flex:none; }
+  .tabs button { position:relative; cursor:pointer; background:transparent; border:0; color:var(--muted);
+    padding:13px 13px 12px; font-weight:580; display:inline-flex; align-items:center; gap:7px; }
+  .tabs button:hover { color:var(--text); }
+  .tabs button.active { color:var(--text); }
+  .tabs button.active::after { content:""; position:absolute; left:9px; right:9px; bottom:-1px; height:2px; background:var(--accent); border-radius:2px 2px 0 0; }
+  .tabbadge { font-size:10.5px; padding:1px 6px; border-radius:999px; background:var(--surface3); color:var(--muted); }
+  .tabbadge.err { background:#ff6b8122; color:var(--err); }
+  .panes { flex:1; overflow:auto; }
+  .pane { display:none; padding:14px; }
+  .pane.active { display:block; }
+
+  .card { background:var(--surface2); border:1px solid var(--border); border-radius:var(--r); margin-bottom:13px; overflow:hidden; }
+  .card > .h { padding:10px 13px; font-size:11px; letter-spacing:.5px; text-transform:uppercase; color:var(--muted);
+    background:#ffffff06; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:8px; }
+  .card > .h .count { margin-left:auto; color:var(--faint); font-weight:400; }
+  .card > .b { padding:12px 13px; }
+  .hint { color:var(--muted); font-size:11.5px; margin:0 0 11px; }
+
+  label.fl { display:block; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; margin:0 0 4px; }
+  input.in, select.in, textarea.in { width:100%; background:var(--surface3); border:1px solid var(--border); border-radius:8px; padding:8px 10px; }
+  input.in:focus, select.in:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft); }
+  .row { display:flex; gap:9px; flex-wrap:wrap; }
+  .row > .f { flex:1; min-width:90px; }
+  .row.end { align-items:end; }
+
+  .list { display:flex; flex-direction:column; gap:8px; }
+  .item { display:flex; align-items:center; gap:10px; padding:9px 11px; background:var(--surface3); border:1px solid var(--border);
+    border-radius:10px; cursor:pointer; transition:.12s; }
+  .item:hover { border-color:#3b487a; background:#222c49; }
+  .item.sel { border-color:var(--accent); box-shadow:0 0 0 2px var(--accent-soft); }
+  .item .dot { width:10px; height:10px; border-radius:50%; flex:none; }
+  .item .meta { min-width:0; display:flex; flex-direction:column; }
+  .item .meta b { font-weight:600; font-size:12.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .item .meta small { color:var(--muted); font-size:11px; }
+  .item .grow { flex:1; }
+  .tag { font-size:10.5px; padding:2px 7px; border-radius:999px; background:var(--surface); color:var(--muted); border:1px solid var(--border); white-space:nowrap; }
+  .tag.dante { color:var(--dante); border-color:#27557a; } .tag.analog { color:var(--analog); border-color:#6a5223; }
+  .tag.err { color:var(--err); border-color:#7a2a3a; background:#ff6b8112; }
+  .empty { color:var(--faint); font-style:italic; padding:8px 2px; font-size:12.5px; }
+  .chips { display:flex; flex-wrap:wrap; gap:6px; }
+  .chip { display:inline-flex; align-items:center; gap:6px; font-size:11.5px; padding:4px 9px; border-radius:999px; background:var(--surface3); border:1px solid var(--border); }
+  .chip.dyn { border-color:#2c4a73; } .chip.ded { border-color:#4a3a73; } .chip.exc { border-color:#7a2a3a; color:#ffb3bf; }
+  .chip .x { cursor:pointer; color:var(--muted); } .chip .x:hover { color:var(--err); }
+  .seg.small { padding:3px; }
+  .seg.small button { padding:5px 9px; font-size:11.5px; }
+
+  /* matrix */
+  table.matrix { border-collapse:separate; border-spacing:0; font-size:11px; }
+  table.matrix th, table.matrix td { border-right:1px solid var(--border); border-bottom:1px solid var(--border); }
+  table.matrix th { background:var(--surface3); color:var(--muted); font-weight:500; padding:5px 7px; white-space:nowrap; position:sticky; top:0; }
+  table.matrix th.rh { text-align:right; position:sticky; left:0; z-index:1; }
+  table.matrix td .cell { width:28px; height:26px; cursor:pointer; display:grid; place-items:center; }
+  table.matrix td .cell:hover { background:var(--hover); }
+  .x-on { width:13px; height:13px; border-radius:50%; background:var(--accent); box-shadow:0 0 7px var(--accent); }
+  .x-off { width:13px; height:13px; border-radius:50%; border:1px solid #3a4568; }
+
+  /* validation */
+  .issue { display:flex; gap:10px; padding:10px 11px; border-radius:10px; border:1px solid var(--border); background:var(--surface3); cursor:pointer; transition:.12s; }
+  .issue + .issue { margin-top:8px; }
+  .issue:hover { border-color:#3b487a; }
+  .issue.error { border-left:3px solid var(--err); } .issue.warning { border-left:3px solid var(--warn); }
+  .issue .code { font-family:var(--mono); font-size:10.5px; padding:2px 6px; border-radius:6px; height:fit-content; white-space:nowrap; }
+  .issue.error .code { background:#ff6b8122; color:var(--err); } .issue.warning .code { background:#f7c94822; color:var(--warn); }
+  .issue .msg { font-size:12px; color:#dce1f1; } .issue .refs { color:var(--muted); font-size:10.5px; margin-top:3px; font-family:var(--mono); }
+
+  pre#json { margin:0; padding:13px; background:#070a12; border:1px solid var(--border); border-radius:10px; max-height:62vh; overflow:auto;
+    font:11.5px/1.55 var(--mono); color:#cdd6f4; }
+  table.angtab { width:100%; border-collapse:collapse; font-size:11.5px; margin-top:4px; }
+  table.angtab th { text-align:left; color:var(--muted); font-weight:500; padding:4px 6px; border-bottom:1px solid var(--border); }
+  table.angtab td { padding:4px 6px; border-bottom:1px solid var(--border); font-family:var(--mono); font-size:11px; }
+  .slider { width:100%; accent-color:var(--accent); }
+  .switch { position:relative; width:38px; height:22px; flex:none; }
+  .switch input { opacity:0; width:0; height:0; }
+  .switch span { position:absolute; inset:0; background:var(--surface); border:1px solid var(--border); border-radius:999px; transition:.15s; cursor:pointer; }
+  .switch span::before { content:""; position:absolute; width:16px; height:16px; left:2px; top:2px; background:#aeb7d6; border-radius:50%; transition:.15s; }
+  .switch input:checked + span { background:var(--accent); border-color:var(--accent); }
+  .switch input:checked + span::before { transform:translateX(16px); background:#08101f; }
+
+  .toast { position:fixed; bottom:20px; left:50%; transform:translateX(-50%) translateY(8px); opacity:0;
+    padding:10px 18px; border-radius:11px; font-size:13px; font-weight:560; box-shadow:0 10px 30px -8px #000; transition:.22s; pointer-events:none; z-index:50; }
+  .toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+  .toast.err { background:var(--err); color:#2a0009; } .toast.ok { background:var(--ok); color:#012616; } .toast.info { background:var(--surface3); border:1px solid var(--border); color:var(--text); }
+  .kbd { font-family:var(--mono); font-size:10.5px; padding:1px 5px; border:1px solid var(--border); border-bottom-width:2px; border-radius:5px; background:var(--surface3); color:var(--muted); }
+
+  @media (max-width:1080px){ .inspector{ width:380px; } }
+  @media (max-width:880px){ .workspace{ flex-direction:column; } .inspector{ width:auto; border-left:0; border-top:1px solid var(--border); max-height:46vh; } }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="brand">
+      <div class="logo"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3v18M7 8v8M17 8v8M3 11v2M21 11v2" stroke="#08101f" stroke-width="2.2" stroke-linecap="round"/></svg></div>
+      <div><h1>Conferencing Audio Pipeline</h1><div class="sub">Signal-routing control plane · validates live · no real audio</div></div>
+    </div>
+
+    <div class="hgroup right">
+      <select class="scenario" id="scenario" title="Load a sample configuration">
+        <option value="">Load sample…</option>
+        <option value="boardroom">Boardroom (reference AEC)</option>
+        <option value="huddle">Huddle (auto-configured)</option>
+        <option value="empty">Empty config</option>
+      </select>
+      <button class="btn" data-action="auto-config" title="Apply sensible defaults (Alt+A)">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M12 2v3m0 14v3M2 12h3m14 0h3M5 5l2 2m10 10l2 2M19 5l-2 2M7 17l-2 2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Auto-configure</button>
+      <div class="sep"></div>
+      <button class="btn icon" id="btnUndo" data-action="undo" title="Undo (Ctrl+Z)"><svg viewBox="0 0 24 24" fill="none"><path d="M9 7L4 12l5 5M4 12h11a5 5 0 0 1 0 10h-1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      <button class="btn icon" id="btnRedo" data-action="redo" title="Redo (Ctrl+Y)"><svg viewBox="0 0 24 24" fill="none"><path d="M15 7l5 5-5 5M20 12H9a5 5 0 0 0 0 10h1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      <div class="sep"></div>
+      <button class="btn ghost icon" data-action="export-png" title="Export room as PNG"><svg viewBox="0 0 24 24" fill="none"><path d="M4 16l5-5 4 4 3-3 4 4M4 5h16v14H4z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg></button>
+      <button class="btn ghost icon" data-action="download" title="Download JSON"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      <button class="btn ghost icon" data-action="import-click" title="Import JSON"><svg viewBox="0 0 24 24" fill="none"><path d="M12 21V9m0 0l-4 4m4-4l4 4M5 3h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      <input id="importFile" type="file" accept="application/json" style="display:none" />
+      <div class="sep"></div>
+      <span class="pill ok" id="valPill" data-action="goto-issues"><span class="dotpulse"></span><span id="valPillText">Valid</span></span>
+    </div>
+  </header>
+
+  <div class="workspace">
+    <!-- STAGE -->
+    <div class="stage">
+      <div class="stage-bar">
+        <div class="seg" id="toolSeg">
+          <button data-tool="select" class="active" title="Select / move (V)"><svg viewBox="0 0 24 24" fill="none"><path d="M5 3l15 9-6 1-2 6-7-16z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>Select</button>
+          <button data-tool="connect" title="Connect devices into routes (C)"><svg viewBox="0 0 24 24" fill="none"><circle cx="6" cy="6" r="2.4" stroke="currentColor" stroke-width="1.7"/><circle cx="18" cy="18" r="2.4" stroke="currentColor" stroke-width="1.7"/><path d="M8 8l8 8" stroke="currentColor" stroke-width="1.7"/></svg>Connect</button>
+          <button data-tool="room" title="Draw room outline (R)"><svg viewBox="0 0 24 24" fill="none"><path d="M4 4h16v16H4z" stroke="currentColor" stroke-width="1.7"/></svg>Room</button>
+          <button data-tool="device" title="Place selected device (D)"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="10" r="3" stroke="currentColor" stroke-width="1.7"/><path d="M12 13v8M5 21h14" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>Place</button>
+          <button data-tool="zone" title="Draw coverage zone (Z)"><svg viewBox="0 0 24 24" fill="none"><path d="M5 5h14v14H5z" stroke="currentColor" stroke-width="1.7" stroke-dasharray="3 3"/></svg>Zone</button>
+        </div>
+        <div class="grow"></div>
+        <div class="seg small" id="viewSeg" title="Toggle 2D / 3D layout">
+          <button data-view="2d" class="active">2D</button>
+          <button data-view="3d">3D</button>
+        </div>
+        <div class="mini">Snap
+          <select id="snapSel"><option value="0">off</option><option value="0.25" selected>0.25 m</option><option value="0.5">0.5 m</option><option value="1">1 m</option></select>
+        </div>
+        <button class="btn sm ghost" data-action="fit" title="Re-fit view">Fit</button>
+      </div>
+
+      <div class="ctxbar" id="ctxRoom">
+        <div class="f"><label>Width m</label><input id="roomW" type="number" min="1" step="0.5" value="9"/></div>
+        <div class="f"><label>Depth m</label><input id="roomD" type="number" min="1" step="0.5" value="7"/></div>
+        <div class="f"><label>Height m</label><input id="roomH" type="number" min="2" step="0.1" value="3"/></div>
+        <button class="btn sm" data-action="make-rect-room">Rectangular room</button>
+        <button class="btn sm ghost" data-action="clear-room">Clear</button>
+        <span class="ctxhint">…or click the canvas to draw an outline, double-click to close.</span>
+      </div>
+      <div class="ctxbar" id="ctxDevice">
+        <div class="f" style="min-width:220px"><label>Device to place</label><select id="placeDevice"></select></div>
+        <span class="ctxhint">Click the canvas to (re)position it. New devices auto-place.</span>
+      </div>
+      <div class="ctxbar" id="ctxZone">
+        <div class="f" style="min-width:160px"><label>Array</label><select id="zoneArray"></select></div>
+        <label class="radio"><input type="radio" name="zk" value="dynamic" checked/> Records <span class="ctxhint">(drag)</span></label>
+        <label class="radio"><input type="radio" name="zk" value="dedicated"/> Always-on <span class="ctxhint">(click)</span></label>
+        <label class="radio"><input type="radio" name="zk" value="exclusion"/> No-pickup <span class="ctxhint">(drag · exclude)</span></label>
+      </div>
+
+      <div class="canvas-wrap"><canvas id="stageCanvas"></canvas></div>
+
+      <div class="stage-foot">
+        <div class="legend">
+          <span><i style="background:#9a6dff"></i>Processor</span>
+          <span><i style="background:#6d8bff"></i>Array</span>
+          <span><i style="background:#3ddc97"></i>Wireless</span>
+          <span><i style="background:#2dd4bf"></i>Wired</span>
+          <span><i style="background:#f7c948"></i>Loudspeaker</span>
+          <span><i style="background:#94a3b8"></i>Codec</span>
+          <span><i style="background:#ff7ab6;border-radius:50%"></i>Talker</span>
+          <span><i class="line" style="border-color:#5fb6ff"></i>Dante</span>
+          <span><i class="line" style="border-color:#ffc06a"></i>Analog</span>
+          <span><i style="background:rgba(109,139,255,.45)"></i>Records</span>
+          <span><i style="background:rgba(255,107,129,.5)"></i>No-pickup</span>
+        </div>
+        <div id="coord">x — , y —</div>
+      </div>
+    </div>
+
+    <!-- INSPECTOR -->
+    <aside class="inspector">
+      <nav class="tabs" id="tabs">
+        <button data-tab="build" class="active">Build</button>
+        <button data-tab="routing">Routing</button>
+        <button data-tab="dsp">AEC / DSP</button>
+        <button data-tab="issues">Issues <span class="tabbadge" id="issuesBadge">0</span></button>
+        <button data-tab="json">JSON</button>
+      </nav>
+      <div class="panes">
+        <!-- BUILD -->
+        <section class="pane active" id="pane-build">
+          <div id="selectionCard"></div>
+          <div class="card">
+            <div class="h">Add device</div>
+            <div class="b">
+              <div class="row end">
+                <div class="f" style="flex:1.3"><label class="fl">Type</label>
+                  <select class="in" id="devType">
+                    <option value="processor">Processor (DSP)</option>
+                    <option value="microphoneArray">Microphone array</option>
+                    <option value="wirelessMic">Wireless mic</option>
+                    <option value="wiredMic">Wired mic</option>
+                    <option value="loudspeaker">Loudspeaker</option>
+                    <option value="codec">Codec (far-end)</option>
+                  </select>
+                </div>
+                <div class="f" id="devTransportWrap" style="flex:.8"><label class="fl">Transport</label>
+                  <select class="in" id="devTransport"><option value="dante">dante</option><option value="analog">analog</option></select>
+                </div>
+              </div>
+              <div class="row end" style="margin-top:9px">
+                <div class="f"><label class="fl">ID (optional)</label><input class="in" id="devId" placeholder="auto"/></div>
+                <div class="f" style="flex:1.4"><label class="fl">Label</label><input class="in" id="devLabel" placeholder="auto"/></div>
+                <button class="btn primary" data-action="add-device">Add</button>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="h">Devices <span class="count" id="devCount"></span></div>
+            <div class="b"><div class="list" id="devList"></div></div>
+          </div>
+          <div class="card">
+            <div class="h">Arrays &amp; coverage</div>
+            <div class="b"><div class="list" id="coverageList"></div></div>
+          </div>
+          <div class="card">
+            <div class="h">People (talkers) <span class="count" id="talkerCount"></span></div>
+            <div class="b">
+              <p class="hint">Place the person speaking. Select a talker to see capture status and the steering angle from each array.</p>
+              <button class="btn primary" data-action="add-talker" style="margin-bottom:11px">+ Add talker</button>
+              <div class="list" id="talkerList"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ROUTING -->
+        <section class="pane" id="pane-routing">
+          <div class="card">
+            <div class="h">Add route</div>
+            <div class="b">
+              <p class="hint">output → input, transports must match. Or use the <b>Connect</b> tool on the canvas.</p>
+              <label class="fl">From (output)</label><select class="in" id="routeFrom"></select>
+              <label class="fl" style="margin-top:8px">To (input)</label><select class="in" id="routeTo"></select>
+              <button class="btn primary" data-action="add-route" style="margin-top:10px">Route</button>
+            </div>
+          </div>
+          <div class="card">
+            <div class="h">Routes <span class="count" id="routeCount"></span></div>
+            <div class="b"><div class="list" id="routeList"></div></div>
+          </div>
+          <div class="card">
+            <div class="h">Matrix crosspoints <span class="count" id="matrixHint"></span></div>
+            <div class="b" style="overflow:auto" id="matrixWrap"></div>
+          </div>
+        </section>
+
+        <!-- DSP -->
+        <section class="pane" id="pane-dsp">
+          <div class="card">
+            <div class="h">AEC references</div>
+            <div class="b">
+              <p class="hint">Each mic's reference must equal the speaker feed <b>but exclude the mic itself</b>. Reinforced mics need a dedicated far-end-only bus.</p>
+              <div class="list" id="aecList"></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="h">Automixer</div>
+            <div class="b" id="automixBody"></div>
+          </div>
+        </section>
+
+        <!-- ISSUES -->
+        <section class="pane" id="pane-issues">
+          <div id="issuesBody"></div>
+        </section>
+
+        <!-- JSON -->
+        <section class="pane" id="pane-json">
+          <div class="row" style="margin-bottom:10px">
+            <button class="btn sm" data-action="copy-json">Copy</button>
+            <button class="btn sm" data-action="download">Download</button>
+            <button class="btn sm ghost" data-action="import-click">Import…</button>
+          </div>
+          <pre id="json"></pre>
+        </section>
+      </div>
+    </aside>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script type="module">
+import * as CAP from './dist/index.js';
+
+/* ============================ state ============================ */
+const MIC_TYPES = new Set(['microphoneArray','wirelessMic','wiredMic']);
+const DEFAULT_TRANSPORT = { wirelessMic:'dante', wiredMic:'analog', loudspeaker:'analog', codec:'dante', microphoneArray:'dante' };
+const ID_PREFIX = { processor:'P', microphoneArray:'A', wirelessMic:'WM', wiredMic:'WD', loudspeaker:'L', codec:'C' };
+const DEVICE_STYLE = {
+  processor:{color:'#9a6dff',shape:'square'}, microphoneArray:{color:'#6d8bff',shape:'circle'},
+  wirelessMic:{color:'#3ddc97',shape:'circle'}, wiredMic:{color:'#2dd4bf',shape:'circle'},
+  loudspeaker:{color:'#f7c948',shape:'triangle'}, codec:{color:'#94a3b8',shape:'diamond'},
+};
+
+let config = CAP.createConfig({ name:'Untitled', createdAt:new Date().toISOString() });
+let history = { stack:[config], idx:0 };
+let activeTab = 'build';
+let zoneSeq = 1;
+const ED = { tool:'select', selection:null, drag:null, drawPts:[], hover:null, connectFrom:null, snap:0.25, highlight:new Set() };
+
+/* ============================ helpers ============================ */
+const esc = (s)=>String(s).replace(/[&<>"]/g,(c)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const transportTag = (t)=>`<span class="tag ${t}">${t}</span>`;
+const snap = (v)=> ED.snap ? Math.round(v/ED.snap)*ED.snap : Math.round(v*100)/100;
+const primaryProc = ()=>CAP.getPrimaryProcessor(config);
+const roomH = ()=>config.room?.height ?? 3;
+const elev3d = (d)=>d.elevation ?? CAP.defaultElevation(d, roomH());
+let viewMode = '2d';
+const cam = { yaw:-0.7, pitch:0.62, dist:16 };
+
+function toast(msg, type='err'){ const t=document.getElementById('toast'); t.className='toast show '+type; t.textContent=msg; clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),2600); }
+
+function setConfig(next, record=true){
+  config = next;
+  if (record){
+    history.stack = history.stack.slice(0, history.idx+1);
+    history.stack.push(next);
+    if (history.stack.length>120) history.stack.shift();
+    history.idx = history.stack.length-1;
+  }
+  render();
+}
+function undo(){ if(history.idx>0){ history.idx--; config=history.stack[history.idx]; pruneSelection(); render(); } }
+function redo(){ if(history.idx<history.stack.length-1){ history.idx++; config=history.stack[history.idx]; pruneSelection(); render(); } }
+function pruneSelection(){ const s=ED.selection; if(s?.kind==='device'&&!config.devices.some(d=>d.id===s.id)) ED.selection=null; if(s?.kind==='talker'&&!config.talkers.some(t=>t.id===s.id)) ED.selection=null; }
+
+function nextId(type){ const p=ID_PREFIX[type]??'D'; let n=1; while(config.devices.some(d=>d.id===`${p}${n}`)) n++; return `${p}${n}`; }
+function allPorts(kind){ const o=[]; for(const d of config.devices) for(const p of d.ports) if(p.kind===kind) o.push({d,p}); return o; }
+
+/* ============================ actions ============================ */
+const actions = {
+  'undo':undo, 'redo':redo,
+  'auto-config':()=>{ setConfig(CAP.autoConfigure(config)); toast('Auto-configured','ok'); },
+  'fit':()=>redraw(),
+  'add-device':addDevice, 'add-route':addRoute,
+  'make-rect-room':()=>{ const w=+roomW.value||9,d=+roomD.value||7,h=+roomH.value||3; setConfig(CAP.setRoom(config, CAP.rectangularRoom(w,d,h))); },
+  'clear-room':()=>setConfig(CAP.clearRoom(config)),
+  'download':downloadJson, 'copy-json':copyJson, 'export-png':exportPng,
+  'import-click':()=>document.getElementById('importFile').click(),
+  'goto-issues':()=>switchTab('issues'),
+  'delete-selection':deleteSelection,
+  'add-talker':addTalkerUI,
+};
+
+document.addEventListener('click',(e)=>{
+  const el = e.target.closest('[data-action]'); if(!el) return;
+  const a = el.dataset.action;
+  try{
+    if(actions[a]) return actions[a]();
+    if(a==='remove-device'){ e.stopPropagation(); return setConfig(CAP.removeDevice(config, el.dataset.id)); }
+    if(a==='remove-route'){ return setConfig(CAP.unroute(config, el.dataset.from, el.dataset.to)); }
+    if(a==='set-mode'){ return setConfig(CAP.setCoverageMode(config, el.dataset.id, el.dataset.mode)); }
+    if(a==='add-zone'){ return addZone(el.dataset.id, el.dataset.zoneType); }
+    if(a==='remove-zone'){ e.stopPropagation(); return setConfig(CAP.removeCoverageZone(config, el.dataset.array, el.dataset.zone)); }
+    if(a==='toggle-cross'){ return toggleCross(el.dataset.in, el.dataset.out); }
+    if(a==='select-device'){ ED.selection={kind:'device',id:el.dataset.id}; switchTab('build'); return render(); }
+    if(a==='unplace'){ return setConfig(CAP.clearDevicePosition(config, el.dataset.id)); }
+    if(a==='focus-issue'){ return focusIssue(+el.dataset.idx); }
+    if(a==='select-talker'){ ED.selection={kind:'talker',id:el.dataset.id}; switchTab('build'); return render(); }
+    if(a==='remove-talker'){ e.stopPropagation(); return setConfig(CAP.removeTalker(config, el.dataset.id)); }
+  }catch(err){ toast(err.message); }
+});
+
+document.addEventListener('change',(e)=>{
+  const el=e.target;
+  try{
+    if(el.id==='devType'){ const t=el.value; devTransportWrap.style.visibility = t==='processor'?'hidden':'visible'; devTransport.value=DEFAULT_TRANSPORT[t]??'dante'; return; }
+    if(el.id==='snapSel'){ ED.snap=+el.value; return; }
+    if(el.id==='scenario'){ const v=el.value; el.value=''; return loadScenario(v); }
+    if(el.dataset.action==='set-aec-enabled'||el.dataset.action==='set-aec-ref'){
+      const id=el.dataset.id;
+      const en=document.querySelector(`input[data-action="set-aec-enabled"][data-id="${id}"]`);
+      const rf=document.querySelector(`select[data-action="set-aec-ref"][data-id="${id}"]`);
+      return setConfig(CAP.setAec(config, id, { enabled: en?en.checked:false, referenceBusId: rf&&rf.value?rf.value:null }));
+    }
+    if(el.dataset.action==='rename-device'){ return setConfig(CAP.renameDevice(config, el.dataset.id, el.value||el.dataset.id)); }
+    if(el.dataset.action==='rename-talker'){ return setConfig(CAP.renameTalker(config, el.dataset.id, el.value||el.dataset.id)); }
+    if(el.dataset.action==='talker-pos'){ return commitTalkerPos(el.dataset.id); }
+    if(el.dataset.action==='talker-elev'){ const z=+el.value; if(Number.isFinite(z)) return setConfig(CAP.setTalkerElevation(config, el.dataset.id, z)); return; }
+    if(el.dataset.action==='pos'){ return commitPos(el.dataset.id); }
+    if(el.dataset.action==='elev'){ const z=+el.value; if(Number.isFinite(z)) return setConfig(CAP.setDeviceElevation(config, el.dataset.id, z)); return; }
+    if(el.dataset.action==='nlp'){ return setConfig(CAP.configureAutomixer(config, config.automixer.processorId, CAP.setNlp(config.automixer, el.value))); }
+    if(el.dataset.action==='ch-alwayson'||el.dataset.action==='ch-gate'){ return commitChannel(el.dataset.bus); }
+  }catch(err){ toast(err.message); }
+});
+
+document.getElementById('importFile').addEventListener('change', async (e)=>{
+  const f=e.target.files?.[0]; if(!f) return;
+  try{ setConfig(CAP.deserialize(await f.text())); toast('Imported','ok'); }catch(err){ toast('Import failed: '+err.message); }
+  e.target.value='';
+});
+
+function addDevice(){
+  const type=devType.value, id=devId.value.trim()||nextId(type);
+  const label=devLabel.value.trim()||`${type} ${id}`, transport=devTransport.value;
+  let device;
+  if(type==='processor') device=CAP.createProcessor(id,label);
+  else if(type==='microphoneArray') device=CAP.createMicrophoneArray(id,label,'automatic');
+  else if(type==='wirelessMic') device=CAP.createWirelessMic(id,label,transport);
+  else if(type==='wiredMic') device=CAP.createWiredMic(id,label,transport);
+  else if(type==='loudspeaker') device=CAP.createLoudspeaker(id,label,transport);
+  else device=CAP.createCodec(id,label,transport);
+  let next=CAP.addDevice(config, device);
+  next=CAP.setDevicePosition(next, id, defaultPlacement(next));
+  devId.value=''; devLabel.value='';
+  ED.selection={kind:'device',id};
+  setConfig(next);
+}
+function defaultPlacement(cfg){
+  const b=boundsOf(cfg); const n=cfg.devices.filter(d=>d.position).length;
+  const cx=(b.minX+b.maxX)/2, cy=(b.minY+b.maxY)/2;
+  const ang=n*1.35, rad=Math.min(b.maxX-b.minX,b.maxY-b.minY)*0.16*(1+n*0.18);
+  return { x:snap(cx+Math.cos(ang)*rad), y:snap(cy+Math.sin(ang)*rad) };
+}
+function addRoute(){ const f=routeFrom.value,t=routeTo.value; if(!f||!t) return toast('Pick both ports'); setConfig(CAP.route(config,f,t)); }
+const TALKER_COLOR='#ff7ab6';
+const talkerElev=(t)=>t.elevation ?? CAP.DEFAULT_TALKER_ELEVATION_M;
+function nextTalkerId(){ let n=1; while(config.talkers.some(t=>t.id===`T${n}`)) n++; return `T${n}`; }
+function addTalkerUI(){ const id=nextTalkerId(); const next=CAP.addTalker(config, CAP.createTalker(id, `Talker ${id}`, defaultPlacement(config))); ED.selection={kind:'talker',id}; switchTab('build'); setConfig(next); }
+function commitTalkerPos(id){ const x=+document.getElementById(`tx-${id}`).value, y=+document.getElementById(`ty-${id}`).value; if(Number.isFinite(x)&&Number.isFinite(y)) setConfig(CAP.setTalkerPosition(config,id,{x,y})); }
+function makeZone(kind, id, shape, point){
+  if(kind==='dedicated') return CAP.dedicatedZone(id,`Always-on ${id}`, point||{x:shape.origin.x,y:shape.origin.y});
+  if(kind==='exclusion') return CAP.exclusionZone(id,`No-pickup ${id}`, shape);
+  return CAP.dynamicZone(id,`Records ${id}`, shape);
+}
+function addZone(arrayId, kind){
+  const id=`${arrayId}-z${zoneSeq++}`;
+  const z = makeZone(kind, id, {kind:'rect',origin:{x:1,y:1},width:2,height:2}, {x:1,y:1});
+  setConfig(CAP.addCoverageZone(config, arrayId, z));
+}
+function zoneStyle(t){
+  if(t==='exclusion') return {fill:'rgba(255,107,129,.16)',stroke:'#ff6b81',dash:[2,3],glyph:'⦸'};
+  if(t==='dedicated') return {fill:'rgba(154,109,255,.20)',stroke:'#9a6dff',dash:[],glyph:'◆'};
+  return {fill:'rgba(109,139,255,.15)',stroke:'#6d8bff',dash:[5,4],glyph:'▢'};
+}
+function toggleCross(inBus,outBus){ const p=primaryProc(); if(!p) return; const on=p.matrix.cells[inBus]?.[outBus]?.enabled===true; const m=CAP.matrixFor(config,p.id); setConfig(on?m.clear(inBus,outBus):m.route(inBus,outBus)); }
+function deleteSelection(){
+  const s=ED.selection; if(!s) return;
+  try{
+    if(s.kind==='device') setConfig(CAP.removeDevice(config,s.id));
+    else if(s.kind==='talker') setConfig(CAP.removeTalker(config,s.id));
+    else if(s.kind==='zone') setConfig(CAP.removeCoverageZone(config,s.arrayId,s.zoneId));
+    else if(s.kind==='route'){ const r=config.routes.find(r=>r.id===s.id); if(r) setConfig(CAP.unroute(config,r.fromPortId,r.toPortId)); }
+    ED.selection=null;
+  }catch(err){ toast(err.message); }
+}
+function commitPos(id){
+  const x=+document.getElementById(`px-${id}`).value, y=+document.getElementById(`py-${id}`).value;
+  if(Number.isFinite(x)&&Number.isFinite(y)) setConfig(CAP.setDevicePosition(config,id,{x,y}));
+}
+function commitChannel(bus){
+  const ao=document.querySelector(`input[data-action="ch-alwayson"][data-bus="${bus}"]`).checked;
+  const g=+document.querySelector(`input[data-action="ch-gate"][data-bus="${bus}"]`).value;
+  const am=CAP.upsertChannel(config.automixer, CAP.automixerChannel(bus,{alwaysOn:ao,gatingSensitivity:g}));
+  setConfig(CAP.configureAutomixer(config, config.automixer.processorId, am));
+}
+
+/* connect tool: pick compatible ports between two devices */
+function resolveConnection(fromId,toId){
+  const a=config.devices.find(d=>d.id===fromId), b=config.devices.find(d=>d.id===toId);
+  if(!a||!b||a===b) return null;
+  const outs=a.ports.filter(p=>p.kind==='output'), ins=b.ports.filter(p=>p.kind==='input');
+  const used=new Set(config.routes.map(r=>r.toPortId));
+  for(const t of ['dante','analog']){
+    const o=outs.find(p=>p.transport===t);
+    const i=ins.find(p=>p.transport===t&&!used.has(p.id))||ins.find(p=>p.transport===t);
+    if(o&&i) return {from:o.id,to:i.id};
+  }
+  return null;
+}
+
+/* ============================ tabs ============================ */
+function switchTab(tab){ activeTab=tab; document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));
+  document.querySelectorAll('.pane').forEach(p=>p.classList.toggle('active',p.id===`pane-${tab}`)); }
+document.getElementById('tabs').addEventListener('click',(e)=>{ const b=e.target.closest('button[data-tab]'); if(b) switchTab(b.dataset.tab); });
+
+/* ============================ export ============================ */
+function downloadJson(){ const blob=new Blob([CAP.serialize(config,true)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=(config.metadata.name||'config').replace(/\s+/g,'-')+'.json'; a.click(); URL.revokeObjectURL(a.href); toast('Downloaded JSON','ok'); }
+async function copyJson(){ try{ await navigator.clipboard.writeText(CAP.serialize(config,true)); toast('Copied JSON','ok'); }catch{ toast('Clipboard blocked'); } }
+function exportPng(){ const a=document.createElement('a'); a.href=canvas.toDataURL('image/png'); a.download='room-layout.png'; a.click(); toast('Exported PNG','ok'); }
+
+/* ============================ scenarios ============================ */
+function loadScenario(which){
+  if(!which) return;
+  if(which==='empty'){ setConfig(CAP.createConfig({name:'Untitled',createdAt:new Date().toISOString()})); ED.selection=null; return; }
+  if(which==='boardroom'){ setConfig(boardroom()); toast('Loaded boardroom — try pointing PM at P-out-analog-1','info'); return; }
+  if(which==='huddle'){ setConfig(CAP.autoConfigure(huddle())); toast('Loaded huddle (auto-configured)','ok'); return; }
+}
+function place(c,id,x,y){ return CAP.setDevicePosition(c,id,{x,y}); }
+function boardroom(){
+  let c=CAP.createConfig({name:'Boardroom',createdAt:new Date().toISOString()});
+  c=CAP.setRoom(c, CAP.rectangularRoom(9,7,3));
+  c=CAP.addDevice(c,CAP.createProcessor('P','DSP'));
+  c=CAP.addDevice(c,CAP.createMicrophoneArray('A1','Ceiling Array 1','automatic'));
+  c=CAP.addDevice(c,CAP.createMicrophoneArray('A2','Ceiling Array 2','automatic'));
+  c=CAP.addDevice(c,CAP.createWirelessMic('PM','Presenter Mic','dante'));
+  c=CAP.addDevice(c,CAP.createLoudspeaker('L1','Speaker L','analog'));
+  c=CAP.addDevice(c,CAP.createLoudspeaker('L2','Speaker R','analog'));
+  c=CAP.addDevice(c,CAP.createCodec('C','Codec','dante'));
+  c=place(c,'P',8,6); c=place(c,'A1',3,2.5); c=place(c,'A2',6,2.5); c=place(c,'PM',4.5,0.8); c=place(c,'L1',2,6.2); c=place(c,'L2',7,6.2); c=place(c,'C',8,1);
+  c=CAP.route(c,'A1-out-mix','P-in-dante-1'); c=CAP.route(c,'A2-out-mix','P-in-dante-2');
+  c=CAP.route(c,'PM-out-dante-1','P-in-dante-3'); c=CAP.route(c,'C-out-dante-1','P-in-dante-4');
+  c=CAP.route(c,'P-out-analog-1','L1-in-analog-1'); c=CAP.route(c,'P-out-analog-1','L2-in-analog-1');
+  c=CAP.matrixFor(c,'P').route('P-in-dante-4','P-out-analog-1'); c=CAP.matrixFor(c,'P').route('P-in-dante-3','P-out-analog-1');
+  c=CAP.matrixFor(c,'P').route('P-in-dante-1','P-out-dante-1'); c=CAP.matrixFor(c,'P').route('P-in-dante-2','P-out-dante-1'); c=CAP.matrixFor(c,'P').route('P-in-dante-3','P-out-dante-1');
+  c=CAP.route(c,'P-out-dante-1','C-in-dante-1'); c=CAP.matrixFor(c,'P').route('P-in-dante-4','P-out-dante-2');
+  c=CAP.setAec(c,'A1',{enabled:true,referenceBusId:'P-out-analog-1'}); c=CAP.setAec(c,'A2',{enabled:true,referenceBusId:'P-out-analog-1'});
+  c=CAP.setAec(c,'PM',{enabled:true,referenceBusId:'P-out-dante-2'});
+  c=CAP.addCoverageZone(c,'A1',CAP.dynamicZone('A1-z1','Table',{kind:'rect',origin:{x:1.5,y:1},width:5,height:4}));
+  c=CAP.addCoverageZone(c,'A1',CAP.exclusionZone('A1-x1','Doorway',{kind:'rect',origin:{x:0.4,y:5},width:1.6,height:1.6}));
+  c=CAP.addTalker(c,CAP.createTalker('T1','Presenter',{x:4.5,y:1.4},1.55));
+  c=CAP.addTalker(c,CAP.createTalker('T2','Attendee',{x:3,y:3},1.2));
+  return c;
+}
+function huddle(){
+  let c=CAP.createConfig({name:'Huddle',createdAt:new Date().toISOString()});
+  c=CAP.setRoom(c, CAP.rectangularRoom(5,4,2.7));
+  c=CAP.addDevice(c,CAP.createProcessor('P','DSP'));
+  c=CAP.addDevice(c,CAP.createMicrophoneArray('A1','Table Array','automatic'));
+  c=CAP.addDevice(c,CAP.createLoudspeaker('L1','Soundbar','analog'));
+  c=CAP.addDevice(c,CAP.createCodec('C','Room Codec','dante'));
+  c=place(c,'P',4,3.2); c=place(c,'A1',2.5,2); c=place(c,'L1',2.5,0.6); c=place(c,'C',4,0.8);
+  c=CAP.route(c,'A1-out-mix','P-in-dante-1'); c=CAP.route(c,'C-out-dante-1','P-in-dante-2');
+  c=CAP.route(c,'P-out-analog-1','L1-in-analog-1'); c=CAP.matrixFor(c,'P').route('P-in-dante-2','P-out-analog-1');
+  return c;
+}
+
+/* ============================ render ============================ */
+function render(){
+  renderHeader(); renderSelection(); renderDevices(); renderCoverage(); renderPeople(); renderRouting(); renderAec(); renderAutomix();
+  renderRoomControls(); renderValidation();
+  document.getElementById('json').textContent = CAP.serialize(config,true);
+  redraw();
+}
+
+function renderHeader(){
+  document.getElementById('btnUndo').disabled = history.idx<=0;
+  document.getElementById('btnRedo').disabled = history.idx>=history.stack.length-1;
+}
+
+function renderSelection(){
+  const card=document.getElementById('selectionCard'); const s=ED.selection;
+  if(!s){ card.innerHTML=''; return; }
+  if(s.kind==='device'){
+    const d=config.devices.find(x=>x.id===s.id); if(!d){ card.innerHTML=''; return; }
+    const st=DEVICE_STYLE[d.type]; const pos=d.position;
+    card.innerHTML=`<div class="card" style="border-color:var(--accent)">
+      <div class="h"><span class="dot" style="width:9px;height:9px;border-radius:50%;background:${st.color}"></span>Selected · ${d.type} <span class="count">${d.id}</span></div>
+      <div class="b">
+        <label class="fl">Label</label><input class="in" data-action="rename-device" data-id="${d.id}" value="${esc(d.label)}"/>
+        <div class="row" style="margin-top:9px">
+          <div class="f"><label class="fl">X (m)</label><input class="in" id="px-${d.id}" data-action="pos" data-id="${d.id}" type="number" step="0.1" value="${pos?pos.x:''}"/></div>
+          <div class="f"><label class="fl">Y (m)</label><input class="in" id="py-${d.id}" data-action="pos" data-id="${d.id}" type="number" step="0.1" value="${pos?pos.y:''}"/></div>
+          <div class="f"><label class="fl">Z height${d.elevation===undefined?' (auto)':''}</label><input class="in" data-action="elev" data-id="${d.id}" type="number" step="0.1" value="${elev3d(d)}"/></div>
+        </div>
+        <div class="row" style="margin-top:10px">
+          ${pos?`<button class="btn sm ghost" data-action="unplace" data-id="${d.id}">Unplace</button>`:''}
+          <div class="grow"></div>
+          <button class="btn sm" data-action="delete-selection">Delete <span class="kbd">Del</span></button>
+        </div>
+      </div></div>`;
+  } else if(s.kind==='talker'){
+    const t=config.talkers.find(x=>x.id===s.id); if(!t){ card.innerHTML=''; return; }
+    const cov=CAP.talkerCoverage(config,t.id);
+    const cap = cov.captured?`<span class="tag" style="color:#3ddc97;border-color:#1f6b4d">✓ recorded</span>`
+      : cov.excludedBy.length?`<span class="tag err">excluded by ${esc(cov.excludedBy.join(', '))}</span>`
+      : `<span class="tag" style="color:#9aa4c2">not in any pickup zone</span>`;
+    const arrays=config.devices.filter(d=>d.type==='microphoneArray');
+    const rows=arrays.map(a=>{ const ang=CAP.arrayToTalkerAngles(config,a.id,t.id);
+      if(!ang) return `<tr><td>${esc(a.label)}</td><td colspan="3" style="color:var(--faint)">array unplaced</td></tr>`;
+      return `<tr><td>${esc(a.label)}</td><td>${ang.distance.toFixed(2)} m</td><td>az ${Math.round(ang.azimuthDeg)}°</td><td>tilt ${Math.round(ang.downtiltDeg)}° · nadir ${Math.round(ang.offNadirDeg)}°</td></tr>`;
+    }).join('') || `<tr><td colspan="4" style="color:var(--faint)">no arrays</td></tr>`;
+    card.innerHTML=`<div class="card" style="border-color:var(--accent)">
+      <div class="h"><span class="dot" style="width:9px;height:9px;border-radius:50%;background:${TALKER_COLOR}"></span>Talker <span class="count">${t.id}</span></div>
+      <div class="b">
+        <label class="fl">Label</label><input class="in" data-action="rename-talker" data-id="${t.id}" value="${esc(t.label)}"/>
+        <div class="row" style="margin-top:9px">
+          <div class="f"><label class="fl">X (m)</label><input class="in" id="tx-${t.id}" data-action="talker-pos" data-id="${t.id}" type="number" step="0.1" value="${t.position.x}"/></div>
+          <div class="f"><label class="fl">Y (m)</label><input class="in" id="ty-${t.id}" data-action="talker-pos" data-id="${t.id}" type="number" step="0.1" value="${t.position.y}"/></div>
+          <div class="f"><label class="fl">Mouth Z (m)</label><input class="in" data-action="talker-elev" data-id="${t.id}" type="number" step="0.1" value="${talkerElev(t)}"/></div>
+        </div>
+        <div style="margin:11px 0 7px">${cap}</div>
+        <label class="fl">Steering angle from each array</label>
+        <table class="angtab"><thead><tr><th>Array</th><th>Dist</th><th>Azimuth</th><th>Tilt / off-nadir</th></tr></thead><tbody>${rows}</tbody></table>
+        <div class="row" style="margin-top:11px"><div class="grow"></div><button class="btn sm" data-action="delete-selection">Delete <span class="kbd">Del</span></button></div>
+      </div></div>`;
+  } else if(s.kind==='zone'){
+    const arr=config.devices.find(x=>x.id===s.arrayId); const z=arr?.zones.find(z=>z.id===s.zoneId); if(!z){ card.innerHTML=''; return; }
+    const g=z.shape.kind==='rect'?`${z.shape.width}×${z.shape.height} m @ (${z.shape.origin.x}, ${z.shape.origin.y})`:'polygon';
+    card.innerHTML=`<div class="card" style="border-color:var(--accent)">
+      <div class="h">Selected zone · ${z.type} <span class="count">${arr.label}</span></div>
+      <div class="b"><b>${esc(z.label)}</b><div style="color:var(--muted);font-size:12px;margin-top:3px">${g}</div>
+      <div class="row" style="margin-top:10px"><div class="grow"></div><button class="btn sm" data-action="delete-selection">Delete <span class="kbd">Del</span></button></div></div></div>`;
+  } else if(s.kind==='route'){
+    const r=config.routes.find(r=>r.id===s.id); if(!r){ card.innerHTML=''; return; }
+    card.innerHTML=`<div class="card" style="border-color:var(--accent)"><div class="h">Selected route</div>
+      <div class="b"><div style="font-family:var(--mono);font-size:12px">${esc(r.fromPortId)} → ${esc(r.toPortId)}</div>
+      <div class="row" style="margin-top:10px"><div class="grow"></div><button class="btn sm" data-action="delete-selection">Delete <span class="kbd">Del</span></button></div></div></div>`;
+  }
+}
+
+function renderDevices(){
+  document.getElementById('devCount').textContent = config.devices.length?`${config.devices.length}`:'';
+  const list=document.getElementById('devList');
+  if(!config.devices.length){ list.innerHTML='<div class="empty">No devices — add one, or load a sample scenario.</div>'; return; }
+  list.innerHTML=config.devices.map(d=>{
+    const st=DEVICE_STYLE[d.type]; const sel=ED.selection?.kind==='device'&&ED.selection.id===d.id;
+    const ins=d.ports.filter(p=>p.kind==='input').length, outs=d.ports.filter(p=>p.kind==='output').length;
+    return `<div class="item ${sel?'sel':''}" data-action="select-device" data-id="${d.id}">
+      <span class="dot" style="background:${st.color}"></span>
+      <div class="meta"><b>${esc(d.label)}</b><small>${d.type} · ${d.id} · ${ins} in / ${outs} out${d.position?' · placed':''}</small></div>
+      <div class="grow"></div><button class="btn sm ghost" data-action="remove-device" data-id="${d.id}">✕</button></div>`;
+  }).join('');
+}
+
+function renderPeople(){
+  document.getElementById('talkerCount').textContent = config.talkers.length?`${config.talkers.length}`:'';
+  const list=document.getElementById('talkerList');
+  if(!config.talkers.length){ list.innerHTML='<div class="empty">No talkers — add a person to check coverage &amp; angles.</div>'; return; }
+  list.innerHTML=config.talkers.map(t=>{
+    const sel=ED.selection?.kind==='talker'&&ED.selection.id===t.id;
+    const cov=CAP.talkerCoverage(config,t.id);
+    const badge = cov.captured?'<span class="tag" style="color:#3ddc97;border-color:#1f6b4d">recorded</span>'
+      : cov.excludedBy.length?'<span class="tag err">excluded</span>'
+      : '<span class="tag" style="color:#9aa4c2">not covered</span>';
+    return `<div class="item ${sel?'sel':''}" data-action="select-talker" data-id="${t.id}">
+      <span class="dot" style="background:${TALKER_COLOR}"></span>
+      <div class="meta"><b>${esc(t.label)}</b><small>(${t.position.x}, ${t.position.y}) · ${talkerElev(t)} m</small></div>
+      <div class="grow"></div>${badge}<button class="btn sm ghost" data-action="remove-talker" data-id="${t.id}">✕</button></div>`;
+  }).join('');
+}
+
+function renderCoverage(){
+  const arrays=config.devices.filter(d=>d.type==='microphoneArray'); const el=document.getElementById('coverageList');
+  if(!arrays.length){ el.innerHTML='<div class="empty">No microphone arrays.</div>'; return; }
+  el.innerHTML=arrays.map(a=>{
+    const mb=(m,l)=>`<button class="${a.coverageMode===m?'active':''}" data-action="set-mode" data-id="${a.id}" data-mode="${m}">${l}</button>`;
+    const zc={dedicated:'ded',exclusion:'exc',dynamic:'dyn'}, zg={dedicated:'◆',exclusion:'⦸',dynamic:'▢'};
+    const chips=a.zones.map(z=>`<span class="chip ${zc[z.type]}">${zg[z.type]} ${esc(z.label)}<span class="x" data-action="remove-zone" data-array="${a.id}" data-zone="${z.id}">✕</span></span>`).join('')||'<span style="color:var(--faint);font-size:11.5px">no zones</span>';
+    return `<div style="padding:10px 11px;background:var(--surface3);border:1px solid var(--border);border-radius:10px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><b style="font-size:12.5px">${esc(a.label)}</b><small style="color:var(--muted)">${a.zones.length}/8 · ${a.ports.length} out</small>
+      <div class="grow" style="flex:1"></div><div class="seg small">${mb('automatic','Auto')}${mb('manual','Manual')}</div></div>
+      <div class="chips" style="margin-bottom:8px">${chips}</div>
+      <div class="row"><button class="btn sm" data-action="add-zone" data-id="${a.id}" data-zone-type="dynamic">+ Records</button><button class="btn sm" data-action="add-zone" data-id="${a.id}" data-zone-type="dedicated">+ Always-on</button><button class="btn sm" data-action="add-zone" data-id="${a.id}" data-zone-type="exclusion">+ No-pickup</button></div></div>`;
+  }).join('');
+}
+
+function renderRouting(){
+  const opt=({d,p})=>`<option value="${p.id}">${esc(d.label)}: ${esc(p.label)} [${p.transport}]</option>`;
+  routeFrom.innerHTML=allPorts('output').map(opt).join('')||'<option value="">— no outputs —</option>';
+  routeTo.innerHTML=allPorts('input').map(opt).join('')||'<option value="">— no inputs —</option>';
+  document.getElementById('routeCount').textContent=config.routes.length?`${config.routes.length}`:'';
+  const list=document.getElementById('routeList');
+  if(!config.routes.length){ list.innerHTML='<div class="empty">No routes.</div>'; }
+  else list.innerHTML=config.routes.map(r=>{
+    const f=CAP.findPort(config,r.fromPortId), t=CAP.findPort(config,r.toPortId);
+    const lbl=(pid,p)=>p?`${esc(p.label)} ${transportTag(p.transport)}`:`<span class="tag err">${esc(pid)} missing</span>`;
+    const sel=ED.selection?.kind==='route'&&ED.selection.id===r.id;
+    return `<div class="item ${sel?'sel':''}"><div class="meta"><b>${lbl(r.fromPortId,f)} → ${lbl(r.toPortId,t)}</b><small>${esc(r.fromPortId)} → ${esc(r.toPortId)}</small></div><div class="grow"></div><button class="btn sm ghost" data-action="remove-route" data-from="${r.fromPortId}" data-to="${r.toPortId}">✕</button></div>`;
+  }).join('');
+  renderMatrix();
+}
+
+function renderMatrix(){
+  const wrap=document.getElementById('matrixWrap'); const p=primaryProc();
+  if(!p){ wrap.innerHTML='<div class="empty">Add a processor.</div>'; document.getElementById('matrixHint').textContent=''; return; }
+  const {inputBuses,outputBuses,cells}=p.matrix;
+  document.getElementById('matrixHint').textContent=`${p.id}`;
+  const short=(id)=>id.replace(p.id+'-','');
+  const head=`<tr><th class="rh">in＼out</th>${outputBuses.map(o=>`<th>${esc(short(o.id))}</th>`).join('')}</tr>`;
+  const rows=inputBuses.map(i=>`<tr><th class="rh">${esc(short(i.id))}</th>${outputBuses.map(o=>{const on=cells[i.id]?.[o.id]?.enabled===true; return `<td><div class="cell" data-action="toggle-cross" data-in="${i.id}" data-out="${o.id}"><div class="${on?'x-on':'x-off'}"></div></div></td>`;}).join('')}</tr>`).join('');
+  wrap.innerHTML=`<table class="matrix">${head}${rows}</table>`;
+}
+
+function renderAec(){
+  const mics=config.devices.filter(d=>MIC_TYPES.has(d.type)); const el=document.getElementById('aecList');
+  if(!mics.length){ el.innerHTML='<div class="empty">No microphones.</div>'; return; }
+  const p=primaryProc(); const opts=(sel)=>(p?p.matrix.outputBuses:[]).map(b=>`<option value="${b.id}" ${sel===b.id?'selected':''}>${esc(b.id.replace((p?.id||'')+'-',''))}</option>`).join('');
+  el.innerHTML=mics.map(m=>`<div style="padding:10px 11px;background:var(--surface3);border:1px solid var(--border);border-radius:10px">
+    <div style="display:flex;align-items:center;gap:9px;margin-bottom:8px">
+      <label class="switch"><input type="checkbox" data-action="set-aec-enabled" data-id="${m.id}" ${m.aec.enabled?'checked':''}/><span></span></label>
+      <div class="meta" style="display:flex;flex-direction:column"><b style="font-size:12.5px">${esc(m.label)}</b><small style="color:var(--muted)">${m.type} · ${m.id}</small></div></div>
+    <label class="fl">Reference bus</label>
+    <select class="in" data-action="set-aec-ref" data-id="${m.id}" ${m.aec.enabled?'':'disabled'}><option value="">— none —</option>${opts(m.aec.referenceBusId)}</select></div>`).join('');
+}
+
+function renderAutomix(){
+  const body=document.getElementById('automixBody'); const am=config.automixer; const p=primaryProc();
+  if(!p){ body.innerHTML='<div class="empty">Add a processor.</div>'; return; }
+  const nlpOpts=CAP.NLP_LEVELS.map(l=>`<option value="${l}" ${am.nlp===l?'selected':''}>${l}</option>`).join('');
+  const chans=am.channels.length?am.channels.map(ch=>`<div style="padding:9px 10px;background:var(--surface3);border:1px solid var(--border);border-radius:9px;margin-top:8px">
+    <div style="display:flex;align-items:center;gap:9px"><b style="font-size:12px;font-family:var(--mono)">${esc(ch.inputBusId.replace(p.id+'-',''))}</b><div class="grow" style="flex:1"></div>
+      <span style="color:var(--muted);font-size:11px">always-on</span><label class="switch"><input type="checkbox" data-action="ch-alwayson" data-bus="${ch.inputBusId}" ${ch.alwaysOn?'checked':''}/><span></span></label></div>
+    <div style="display:flex;align-items:center;gap:9px;margin-top:7px"><span style="color:var(--muted);font-size:11px;white-space:nowrap">gate ${ch.gatingSensitivity.toFixed(2)}</span>
+      <input class="slider" type="range" min="0" max="1" step="0.05" value="${ch.gatingSensitivity}" data-action="ch-gate" data-bus="${ch.inputBusId}"/></div></div>`).join('')
+    :'<div class="empty">No channels. Use Auto-configure or wire mics, then auto-configure.</div>';
+  body.innerHTML=`<div class="row end"><div class="f"><label class="fl">NLP level</label><select class="in" data-action="nlp">${nlpOpts}</select></div>
+    <div class="f"><label class="fl">Automix output</label><input class="in" value="${am.outputBusId?esc(am.outputBusId.replace(p.id+'-','')):'— none —'}" disabled/></div></div>
+    <div style="margin-top:6px">${chans}</div>`;
+}
+
+function renderRoomControls(){
+  const pd=document.getElementById('placeDevice'); const prev=pd.value;
+  pd.innerHTML=config.devices.length?config.devices.map(d=>`<option value="${d.id}">${esc(d.label)} · ${d.id}${d.position?' ✓':''}</option>`).join(''):'<option value="">— none —</option>';
+  if([...pd.options].some(o=>o.value===prev)) pd.value=prev;
+  const za=document.getElementById('zoneArray'); const pz=za.value; const arrays=config.devices.filter(d=>d.type==='microphoneArray');
+  za.innerHTML=arrays.length?arrays.map(a=>`<option value="${a.id}">${esc(a.label)} (${a.zones.length}/8)</option>`).join(''):'<option value="">— no arrays —</option>';
+  if([...za.options].some(o=>o.value===pz)) za.value=pz;
+}
+
+let errorRefs=new Set(), warnRefs=new Set();
+function renderValidation(){
+  const res=CAP.validate(config);
+  errorRefs=new Set(res.errors.flatMap(e=>e.refs)); warnRefs=new Set(res.warnings.flatMap(w=>w.refs));
+  const pill=document.getElementById('valPill'), txt=document.getElementById('valPillText');
+  if(res.ok){ pill.className='pill ok'; txt.textContent=`Valid${res.warnings.length?` · ${res.warnings.length} warn`:''}`; }
+  else { pill.className='pill bad'; txt.textContent=`${res.errors.length} error${res.errors.length>1?'s':''}${res.warnings.length?` · ${res.warnings.length} warn`:''}`; }
+  const badge=document.getElementById('issuesBadge'); badge.textContent=res.errors.length||res.warnings.length||'0'; badge.className='tabbadge'+(res.errors.length?' err':'');
+  const all=[...res.errors,...res.warnings];
+  window._issues=all;
+  const body=document.getElementById('issuesBody');
+  body.innerHTML=all.length?all.map((i,idx)=>`<div class="issue ${i.severity}" data-action="focus-issue" data-idx="${idx}">
+    <span class="code">${i.code}</span><div><div class="msg">${esc(i.message)}</div>${i.refs.length?`<div class="refs">${i.refs.map(esc).join(' · ')}</div>`:''}</div></div>`).join('')
+    :'<div class="empty" style="padding:14px">No issues — the configuration is valid. ✓</div>';
+}
+function focusIssue(idx){
+  const i=window._issues?.[idx]; if(!i) return;
+  ED.highlight=new Set(i.refs);
+  const dev=i.refs.find(r=>config.devices.some(d=>d.id===r));
+  if(dev){ ED.selection={kind:'device',id:dev}; }
+  render();
+  clearTimeout(focusIssue._t); focusIssue._t=setTimeout(()=>{ ED.highlight=new Set(); redraw(); },1800);
+}
+
+/* ============================ canvas ============================ */
+const canvas=document.getElementById('stageCanvas'); const ctx=canvas.getContext('2d');
+function shapeCorners(s){ if(s.kind==='rect'){const{origin:o,width:w,height:h}=s;return[o,{x:o.x+w,y:o.y},{x:o.x+w,y:o.y+h},{x:o.x,y:o.y+h}];} return s.points; }
+function boundsOf(cfg){
+  const pts=[]; if(cfg.room) pts.push(...cfg.room.vertices);
+  for(const d of cfg.devices){ if(d.position)pts.push(d.position); if(d.type==='microphoneArray')for(const z of d.zones)pts.push(...shapeCorners(z.shape)); }
+  for(const t of cfg.talkers) pts.push(t.position);
+  if(!pts.length) return {minX:0,minY:0,maxX:12,maxY:9};
+  let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+  for(const p of pts){minX=Math.min(minX,p.x);minY=Math.min(minY,p.y);maxX=Math.max(maxX,p.x);maxY=Math.max(maxY,p.y);}
+  const pad=1.5; minX-=pad;minY-=pad;maxX+=pad;maxY+=pad;
+  if(maxX-minX<6){const c=(minX+maxX)/2;minX=c-3;maxX=c+3;} if(maxY-minY<5){const c=(minY+maxY)/2;minY=c-2.5;maxY=c+2.5;}
+  return {minX,minY,maxX,maxY};
+}
+function view(){ const r=canvas.getBoundingClientRect(),W=r.width,H=r.height,M=34,b=boundsOf(config);
+  const sx=Math.max(b.maxX-b.minX,1),sy=Math.max(b.maxY-b.minY,1),scale=Math.min((W-2*M)/sx,(H-2*M)/sy);
+  return {W,H,scale,offX:M+(W-2*M-sx*scale)/2-b.minX*scale,offY:M+(H-2*M-sy*scale)/2-b.minY*scale,b}; }
+const w2s=(p,v)=>({x:v.offX+p.x*v.scale,y:v.offY+p.y*v.scale});
+const s2w=(px,py,v)=>({x:(px-v.offX)/v.scale,y:(py-v.offY)/v.scale});
+function mouseW(e,v){ const r=canvas.getBoundingClientRect(); return s2w(e.clientX-r.left,e.clientY-r.top,v); }
+function fitCanvas(){ const r=canvas.getBoundingClientRect(),dpr=window.devicePixelRatio||1; canvas.width=Math.round(r.width*dpr); canvas.height=Math.round(r.height*dpr); ctx.setTransform(dpr,0,0,dpr,0,0); }
+
+function devicePos(d){ if(ED.drag?.kind==='device'&&ED.drag.id===d.id) return ED.drag.pos; return d.position; }
+function talkerPos(t){ if(ED.drag?.kind==='talker'&&ED.drag.id===t.id) return ED.drag.pos; return t.position; }
+function talker3(t){ const p=talkerPos(t); return {x:p.x,y:talkerElev(t),z:p.y}; }
+function drawPerson(x,y,r,sel){
+  ctx.save(); ctx.fillStyle=TALKER_COLOR; ctx.strokeStyle='#070a12'; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.arc(x,y+r*0.95,r*1.05,Math.PI,2*Math.PI); ctx.closePath(); ctx.fill(); ctx.stroke(); // shoulders
+  ctx.beginPath(); ctx.arc(x,y-r*0.55,r*0.6,0,7); ctx.fill(); ctx.stroke(); // head
+  if(sel){ ctx.beginPath(); ctx.arc(x,y,r*1.7,0,7); ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.stroke(); }
+  ctx.restore();
+}
+function drawAngleLabel(ax,ay,bx,by,ang){
+  const mx=(ax+bx)/2,my=(ay+by)/2;
+  const txt=`${Math.round(ang.offNadirDeg)}°· ${ang.distance.toFixed(1)}m`;
+  ctx.font='600 10.5px ui-sans-serif,system-ui'; const tw=ctx.measureText(txt).width;
+  ctx.fillStyle='rgba(8,12,24,.8)'; roundRect(mx-tw/2-5,my-9,tw+10,16,5); ctx.fill();
+  ctx.fillStyle='#7fe3ff'; ctx.fillText(txt,mx-tw/2,my+3);
+}
+function zoneShapeLive(aid,z){ if(ED.drag&&(ED.drag.kind==='zone-move'||ED.drag.kind==='zone-resize')&&ED.drag.arrayId===aid&&ED.drag.zoneId===z.id) return ED.drag.shape; return z.shape; }
+function roomVerts(){ if(!config.room) return null; if(ED.drag?.kind==='vertex') return config.room.vertices.map((p,i)=>i===ED.drag.index?ED.drag.pos:p); return config.room.vertices; }
+
+function redraw(){ if(!canvas.clientWidth) return; fitCanvas(); if(viewMode==='3d') draw3d(); else draw2d(); }
+function draw2d(){
+  const v=view(); ctx.clearRect(0,0,v.W,v.H);
+  // grid
+  ctx.lineWidth=1; ctx.font='10px '+'ui-monospace,monospace';
+  for(let x=Math.ceil(v.b.minX);x<=Math.floor(v.b.maxX);x++){ const a=w2s({x,y:v.b.minY},v),b=w2s({x,y:v.b.maxY},v); ctx.strokeStyle=x===0?'#2c3760':'#131a2c'; ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke(); }
+  for(let y=Math.ceil(v.b.minY);y<=Math.floor(v.b.maxY);y++){ const a=w2s({x:v.b.minX,y},v),b=w2s({x:v.b.maxX,y},v); ctx.strokeStyle=y===0?'#2c3760':'#131a2c'; ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke(); }
+  // room
+  const verts=roomVerts();
+  if(verts&&verts.length>=2){ ctx.beginPath(); verts.forEach((p,i)=>{const s=w2s(p,v);i?ctx.lineTo(s.x,s.y):ctx.moveTo(s.x,s.y);}); ctx.closePath();
+    ctx.fillStyle='rgba(109,139,255,.05)'; ctx.fill(); ctx.strokeStyle='#46568f'; ctx.lineWidth=2; ctx.stroke();
+    if(ED.tool==='select') verts.forEach(p=>{const s=w2s(p,v); ctx.beginPath();ctx.arc(s.x,s.y,5,0,7);ctx.fillStyle='#9db4ff';ctx.fill();}); }
+  // zones
+  for(const d of config.devices){ if(d.type!=='microphoneArray')continue;
+    for(const z of d.zones){ const corners=shapeCorners(zoneShapeLive(d.id,z)).map(p=>w2s(p,v)); const zs=zoneStyle(z.type);
+      ctx.beginPath(); corners.forEach((s,i)=>i?ctx.lineTo(s.x,s.y):ctx.moveTo(s.x,s.y)); ctx.closePath();
+      ctx.fillStyle=zs.fill; ctx.fill(); ctx.strokeStyle=zs.stroke; ctx.setLineDash(zs.dash); ctx.lineWidth=1.5; ctx.stroke(); ctx.setLineDash([]);
+      const sel=ED.selection?.kind==='zone'&&ED.selection.zoneId===z.id; if(sel){ctx.strokeStyle='#fff';ctx.lineWidth=1;ctx.stroke();}
+      const c0=corners[0]; ctx.fillStyle='#cdd6f4'; ctx.font='11px '+'ui-sans-serif,system-ui'; ctx.fillText(`${zs.glyph} ${z.label}`,c0.x+4,c0.y+13);
+      if(ED.tool==='select'){const br=corners[2]; ctx.fillStyle='#fff'; ctx.fillRect(br.x-4,br.y-4,8,8); ctx.strokeStyle='#6d8bff'; ctx.lineWidth=1; ctx.strokeRect(br.x-4,br.y-4,8,8);} } }
+  // routes
+  drawRoutes(v);
+  // steering-angle rays from arrays to the selected talker
+  if(ED.selection?.kind==='talker'){ const t=config.talkers.find(x=>x.id===ED.selection.id);
+    if(t){ const B=w2s(talkerPos(t),v); for(const d of config.devices){ if(d.type!=='microphoneArray'||!d.position)continue; const A=w2s(d.position,v); const ang=CAP.arrayToTalkerAngles(config,d.id,t.id); if(!ang)continue;
+      ctx.setLineDash([4,4]); ctx.strokeStyle='#7fe3ff'; ctx.lineWidth=1.4; ctx.beginPath();ctx.moveTo(A.x,A.y);ctx.lineTo(B.x,B.y);ctx.stroke(); ctx.setLineDash([]); drawAngleLabel(A.x,A.y,B.x,B.y,ang); } } }
+  // in-progress zone
+  if(ED.drag?.kind==='zone-new'){ const a=w2s(ED.drag.start,v),b=w2s(ED.drag.cur,v); ctx.setLineDash([5,4]);ctx.strokeStyle='#6d8bff';ctx.lineWidth=1.5; ctx.strokeRect(Math.min(a.x,b.x),Math.min(a.y,b.y),Math.abs(b.x-a.x),Math.abs(b.y-a.y)); ctx.setLineDash([]); }
+  // in-progress room
+  if(ED.tool==='room'&&ED.drawPts.length){ ctx.strokeStyle='#9db4ff';ctx.lineWidth=1.5;ctx.beginPath(); ED.drawPts.forEach((p,i)=>{const s=w2s(p,v);i?ctx.lineTo(s.x,s.y):ctx.moveTo(s.x,s.y);}); if(ED.hover){const s=w2s(ED.hover,v);ctx.lineTo(s.x,s.y);} ctx.stroke(); ED.drawPts.forEach(p=>{const s=w2s(p,v);ctx.beginPath();ctx.arc(s.x,s.y,4,0,7);ctx.fillStyle='#9db4ff';ctx.fill();}); }
+  // connect pending line
+  if(ED.tool==='connect'&&ED.connectFrom){ const d=config.devices.find(x=>x.id===ED.connectFrom); if(d?.position&&ED.hover){ const a=w2s(d.position,v),b=w2s(ED.hover,v); ctx.setLineDash([6,5]);ctx.strokeStyle='#6d8bff';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();ctx.setLineDash([]); } }
+  // devices
+  for(const d of config.devices){ const pos=devicePos(d); if(!pos)continue; const st=DEVICE_STYLE[d.type]; const s=w2s(pos,v);
+    const err=errorRefs.has(d.id), warn=warnRefs.has(d.id), hl=ED.highlight.has(d.id), sel=ED.selection?.kind==='device'&&ED.selection.id===d.id;
+    if(err||warn||hl){ ctx.beginPath();ctx.arc(s.x,s.y,16,0,7); ctx.fillStyle=err?'#ff6b8133':hl?'#6d8bff44':'#f7c94833'; ctx.fill(); }
+    if(sel){ ctx.beginPath();ctx.arc(s.x,s.y,14,0,7);ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.stroke(); }
+    if(ED.connectFrom===d.id){ ctx.beginPath();ctx.arc(s.x,s.y,14,0,7);ctx.strokeStyle='#6d8bff';ctx.lineWidth=2;ctx.stroke(); }
+    ctx.fillStyle=st.color; ctx.strokeStyle=err?'#ff6b81':'#070a12'; ctx.lineWidth=err?2.5:2; marker(st.shape,s.x,s.y);
+    // label pill
+    ctx.font='600 11px '+'ui-sans-serif,system-ui'; const tw=ctx.measureText(d.label).width;
+    ctx.fillStyle='rgba(8,12,24,.72)'; roundRect(s.x+11,s.y-8,tw+12,16,5); ctx.fill();
+    ctx.fillStyle='#e6e9f2'; ctx.fillText(d.label,s.x+17,s.y+4); }
+  // talkers (people)
+  for(const t of config.talkers){ const s=w2s(talkerPos(t),v); const sel=ED.selection?.kind==='talker'&&ED.selection.id===t.id;
+    const cov=CAP.talkerCoverage(config,t.id);
+    drawPerson(s.x,s.y,8,sel);
+    // capture dot
+    ctx.beginPath();ctx.arc(s.x+8,s.y-9,3.2,0,7); ctx.fillStyle=cov.captured?'#3ddc97':(cov.excludedBy.length?'#ff6b81':'#69739a'); ctx.fill();
+    ctx.font='600 11px ui-sans-serif,system-ui'; const tw=ctx.measureText(t.label).width;
+    ctx.fillStyle='rgba(8,12,24,.72)'; roundRect(s.x+12,s.y-8,tw+12,16,5); ctx.fill();
+    ctx.fillStyle='#ffd6ea'; ctx.fillText(t.label,s.x+18,s.y+4); }
+}
+function drawRoutes(v){
+  const pairs=new Map();
+  for(const r of config.routes){ const f=CAP.findPort(config,r.fromPortId),t=CAP.findPort(config,r.toPortId); if(!f||!t)continue;
+    const a=config.devices.find(d=>d.id===f.deviceId),b=config.devices.find(d=>d.id===t.deviceId);
+    if(!a?.position||!b?.position)continue; const key=[a.id,b.id].sort().join('|'); (pairs.get(key)||pairs.set(key,[]).get(key)).push({r,a,b,f}); }
+  for(const list of pairs.values()){ const n=list.length; list.forEach((it,idx)=>{
+    const A=w2s(devicePos(it.a),v),B=w2s(devicePos(it.b),v); const off=(idx-(n-1)/2)*16;
+    const mx=(A.x+B.x)/2,my=(A.y+B.y)/2,dx=B.x-A.x,dy=B.y-A.y,len=Math.hypot(dx,dy)||1; const nx=-dy/len,ny=dx/len;
+    const cx=mx+nx*off,cy=my+ny*off;
+    const sel=ED.selection?.kind==='route'&&ED.selection.id===it.r.id; const err=errorRefs.has(it.r.id);
+    ctx.strokeStyle=err?'#ff6b81':sel?'#fff':(it.f.transport==='dante'?'#5fb6ff':'#ffc06a'); ctx.lineWidth=sel?3:2; ctx.globalAlpha=.92;
+    ctx.beginPath();ctx.moveTo(A.x,A.y);ctx.quadraticCurveTo(cx,cy,B.x,B.y);ctx.stroke(); ctx.globalAlpha=1;
+    // arrowhead near B
+    const t=0.86, qx=(1-t)*(1-t)*A.x+2*(1-t)*t*cx+t*t*B.x, qy=(1-t)*(1-t)*A.y+2*(1-t)*t*cy+t*t*B.y;
+    const ang=Math.atan2(B.y-qy,B.x-qx); ctx.fillStyle=ctx.strokeStyle; drawArrow(qx,qy,ang); }); }
+}
+function drawArrow(x,y,ang){ ctx.save();ctx.translate(x,y);ctx.rotate(ang);ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(-9,-4);ctx.lineTo(-9,4);ctx.closePath();ctx.fill();ctx.restore(); }
+function marker(shape,x,y){ ctx.beginPath();
+  if(shape==='circle')ctx.arc(x,y,8,0,7);
+  else if(shape==='square')ctx.rect(x-8,y-8,16,16);
+  else if(shape==='triangle'){ctx.moveTo(x,y-9);ctx.lineTo(x+9,y+7);ctx.lineTo(x-9,y+7);ctx.closePath();}
+  else{ctx.moveTo(x,y-9);ctx.lineTo(x+9,y);ctx.lineTo(x,y+9);ctx.lineTo(x-9,y);ctx.closePath();}
+  ctx.fill();ctx.stroke(); }
+function roundRect(x,y,w,h,r){ ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath(); }
+
+/* ============================ 3D engine (no libraries) ============================ */
+const V3={ sub:(a,b)=>({x:a.x-b.x,y:a.y-b.y,z:a.z-b.z}), add:(a,b)=>({x:a.x+b.x,y:a.y+b.y,z:a.z+b.z}),
+  scale:(a,s)=>({x:a.x*s,y:a.y*s,z:a.z*s}), dot:(a,b)=>a.x*b.x+a.y*b.y+a.z*b.z,
+  cross:(a,b)=>({x:a.y*b.z-a.z*b.y,y:a.z*b.x-a.x*b.z,z:a.x*b.y-a.y*b.x}),
+  norm:(a)=>{const l=Math.hypot(a.x,a.y,a.z)||1;return {x:a.x/l,y:a.y/l,z:a.z/l};} };
+const FOV=0.92;
+function camera(){ const b=boundsOf(config); const target={x:(b.minX+b.maxX)/2,y:roomH()/2,z:(b.minY+b.maxY)/2};
+  const cp={ x:target.x+cam.dist*Math.cos(cam.pitch)*Math.sin(cam.yaw), y:target.y+cam.dist*Math.sin(cam.pitch), z:target.z+cam.dist*Math.cos(cam.pitch)*Math.cos(cam.yaw) };
+  const fwd=V3.norm(V3.sub(target,cp)); let right=V3.norm(V3.cross(fwd,{x:0,y:1,z:0})); if(!isFinite(right.x))right={x:1,y:0,z:0}; const up=V3.cross(right,fwd);
+  return {cp,fwd,right,up}; }
+function project(P,C,v){ const r=V3.sub(P,C.cp); const cz=V3.dot(r,C.fwd); if(cz<=0.05)return null; const focal=(v.H/2)/Math.tan(FOV/2); return {x:v.W/2+focal*V3.dot(r,C.right)/cz, y:v.H/2-focal*V3.dot(r,C.up)/cz, depth:cz, mpp:focal/cz}; }
+function rayFloor(e,v,C,h){ const r=canvas.getBoundingClientRect(); const sx=e.clientX-r.left,sy=e.clientY-r.top; const focal=(v.H/2)/Math.tan(FOV/2);
+  const dir=V3.norm(V3.add(V3.add(V3.scale(C.right,(sx-v.W/2)/focal),V3.scale(C.up,-(sy-v.H/2)/focal)),C.fwd));
+  if(Math.abs(dir.y)<1e-4)return null; const t=(h-C.cp.y)/dir.y; if(t<=0)return null; const p=V3.add(C.cp,V3.scale(dir,t)); return {x:p.x,y:p.z}; }
+function dev3(d){ const p=devicePos(d); if(!p)return null; return {x:p.x,y:elev3d(d),z:p.y}; }
+function footprint(){ if(config.room) return config.room.vertices.map(p=>({x:p.x,z:p.y})); const b=boundsOf(config); return [{x:b.minX+1.5,z:b.minY+1.5},{x:b.maxX-1.5,z:b.minY+1.5},{x:b.maxX-1.5,z:b.maxY-1.5},{x:b.minX+1.5,z:b.maxY-1.5}]; }
+function marker3(shape,x,y,r){ ctx.beginPath();
+  if(shape==='circle')ctx.arc(x,y,r,0,7);
+  else if(shape==='square')ctx.rect(x-r,y-r,2*r,2*r);
+  else if(shape==='triangle'){ctx.moveTo(x,y-r*1.15);ctx.lineTo(x+r,y+r*0.85);ctx.lineTo(x-r,y+r*0.85);ctx.closePath();}
+  else{ctx.moveTo(x,y-r*1.15);ctx.lineTo(x+r,y);ctx.lineTo(x,y+r*1.15);ctx.lineTo(x-r,y);ctx.closePath();}
+  ctx.fill();ctx.stroke(); }
+
+function draw3d(){
+  const v=view(); const C=camera(); ctx.fillStyle='#0a0e18'; ctx.fillRect(0,0,v.W,v.H);
+  const b=boundsOf(config), h=roomH();
+  // floor grid
+  ctx.lineWidth=1;
+  for(let x=Math.ceil(b.minX);x<=Math.floor(b.maxX);x++){ const a=project({x,y:0,z:b.minY},C,v),e=project({x,y:0,z:b.maxY},C,v); if(a&&e){ctx.strokeStyle=x===0?'#39477a':'#172238';ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(e.x,e.y);ctx.stroke();} }
+  for(let z=Math.ceil(b.minY);z<=Math.floor(b.maxY);z++){ const a=project({x:b.minX,y:0,z},C,v),e=project({x:b.maxX,y:0,z},C,v); if(a&&e){ctx.strokeStyle=z===0?'#39477a':'#172238';ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(e.x,e.y);ctx.stroke();} }
+  // room box
+  const fp=footprint(); const floorPts=fp.map(p=>project({x:p.x,y:0,z:p.z},C,v)), topPts=fp.map(p=>project({x:p.x,y:h,z:p.z},C,v));
+  if(floorPts.every(Boolean)){ ctx.beginPath(); floorPts.forEach((s,i)=>i?ctx.lineTo(s.x,s.y):ctx.moveTo(s.x,s.y)); ctx.closePath(); ctx.fillStyle='rgba(109,139,255,.05)'; ctx.fill(); ctx.strokeStyle='#46568f'; ctx.lineWidth=2; ctx.stroke(); }
+  ctx.strokeStyle='#2f3b66'; ctx.lineWidth=1.4;
+  fp.forEach((_,i)=>{ const a=floorPts[i],t=topPts[i]; if(a&&t){ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(t.x,t.y);ctx.stroke();} });
+  if(topPts.every(Boolean)){ ctx.beginPath(); topPts.forEach((s,i)=>i?ctx.lineTo(s.x,s.y):ctx.moveTo(s.x,s.y)); ctx.closePath(); ctx.strokeStyle='#28335a'; ctx.stroke(); }
+  // zones on floor
+  for(const d of config.devices){ if(d.type!=='microphoneArray')continue; for(const z of d.zones){ const c=shapeCorners(z.shape).map(p=>project({x:p.x,y:0.02,z:p.y},C,v)); if(!c.every(Boolean))continue; const zs=zoneStyle(z.type); ctx.beginPath(); c.forEach((s,i)=>i?ctx.lineTo(s.x,s.y):ctx.moveTo(s.x,s.y)); ctx.closePath(); ctx.fillStyle=zs.fill; ctx.fill(); ctx.strokeStyle=zs.stroke; ctx.setLineDash(zs.dash); ctx.lineWidth=1.3; ctx.stroke(); ctx.setLineDash([]); } }
+  // routes
+  for(const r of config.routes){ const f=CAP.findPort(config,r.fromPortId),t=CAP.findPort(config,r.toPortId); if(!f||!t)continue; const a=config.devices.find(d=>d.id===f.deviceId),b2=config.devices.find(d=>d.id===t.deviceId); const pa=a&&dev3(a),pb=b2&&dev3(b2); if(!pa||!pb)continue; const sa=project(pa,C,v),sb=project(pb,C,v); if(!sa||!sb)continue; ctx.strokeStyle=errorRefs.has(r.id)?'#ff6b81':(f.transport==='dante'?'#5fb6ff':'#ffc06a'); ctx.globalAlpha=.85; ctx.lineWidth=1.8; ctx.beginPath();ctx.moveTo(sa.x,sa.y);ctx.lineTo(sb.x,sb.y);ctx.stroke(); ctx.globalAlpha=1; }
+  // devices (depth-sorted, with pole to floor)
+  const items=[]; for(const d of config.devices){ const P=dev3(d); if(!P)continue; const s=project(P,C,v); if(s)items.push({d,P,s}); }
+  items.sort((a,b)=>b.s.depth-a.s.depth);
+  for(const {d,P,s} of items){ const st=DEVICE_STYLE[d.type]; const foot=project({x:P.x,y:0,z:P.z},C,v);
+    if(foot){ ctx.strokeStyle='#2b3760'; ctx.setLineDash([3,3]); ctx.lineWidth=1; ctx.beginPath();ctx.moveTo(foot.x,foot.y);ctx.lineTo(s.x,s.y);ctx.stroke(); ctx.setLineDash([]); ctx.fillStyle='#2b3760'; ctx.beginPath();ctx.arc(foot.x,foot.y,2,0,7);ctx.fill(); }
+    const rad=Math.max(4,Math.min(20,0.22*s.mpp));
+    const err=errorRefs.has(d.id),warn=warnRefs.has(d.id),hl=ED.highlight.has(d.id),sel=ED.selection?.kind==='device'&&ED.selection.id===d.id;
+    if(err||warn||hl){ ctx.beginPath();ctx.arc(s.x,s.y,rad+6,0,7);ctx.fillStyle=err?'#ff6b8133':hl?'#6d8bff44':'#f7c94833';ctx.fill(); }
+    if(sel||ED.connectFrom===d.id){ ctx.beginPath();ctx.arc(s.x,s.y,rad+4,0,7);ctx.strokeStyle=ED.connectFrom===d.id?'#6d8bff':'#fff';ctx.lineWidth=2;ctx.stroke(); }
+    ctx.fillStyle=st.color; ctx.strokeStyle=err?'#ff6b81':'#070a12'; ctx.lineWidth=2; marker3(st.shape,s.x,s.y,rad);
+    ctx.font='600 11px ui-sans-serif,system-ui'; const tw=ctx.measureText(d.label).width; ctx.fillStyle='rgba(8,12,24,.72)'; roundRect(s.x+rad+3,s.y-8,tw+12,16,5); ctx.fill(); ctx.fillStyle='#e6e9f2'; ctx.fillText(d.label,s.x+rad+9,s.y+4); }
+  // steering-angle rays (3D) from arrays to the selected talker
+  if(ED.selection?.kind==='talker'){ const t=config.talkers.find(x=>x.id===ED.selection.id);
+    if(t){ const tp=project(talker3(t),C,v); if(tp){ for(const d of config.devices){ if(d.type!=='microphoneArray'||!d.position)continue; const ap=project(dev3(d),C,v); const ang=CAP.arrayToTalkerAngles(config,d.id,t.id); if(!ap||!ang)continue;
+      ctx.setLineDash([4,4]); ctx.strokeStyle='#7fe3ff'; ctx.lineWidth=1.3; ctx.beginPath();ctx.moveTo(ap.x,ap.y);ctx.lineTo(tp.x,tp.y);ctx.stroke(); ctx.setLineDash([]); drawAngleLabel(ap.x,ap.y,tp.x,tp.y,ang); } } } }
+  // talkers (depth-sorted with the devices would be ideal; drawn after for simplicity)
+  const titems=config.talkers.map(t=>({t,P:talker3(t),s:project(talker3(t),C,v)})).filter(it=>it.s).sort((a,b)=>b.s.depth-a.s.depth);
+  for(const {t,P,s} of titems){ const foot=project({x:P.x,y:0,z:P.z},C,v);
+    if(foot){ ctx.strokeStyle='#5a2c45'; ctx.setLineDash([3,3]); ctx.lineWidth=1; ctx.beginPath();ctx.moveTo(foot.x,foot.y);ctx.lineTo(s.x,s.y);ctx.stroke(); ctx.setLineDash([]); }
+    const rad=Math.max(5,Math.min(18,0.26*s.mpp)); const sel=ED.selection?.kind==='talker'&&ED.selection.id===t.id;
+    drawPerson(s.x,s.y,rad,sel);
+    const cov=CAP.talkerCoverage(config,t.id); ctx.beginPath();ctx.arc(s.x+rad*0.9,s.y-rad,3,0,7); ctx.fillStyle=cov.captured?'#3ddc97':(cov.excludedBy.length?'#ff6b81':'#69739a'); ctx.fill();
+    ctx.font='600 11px ui-sans-serif,system-ui'; const tw=ctx.measureText(t.label).width; ctx.fillStyle='rgba(8,12,24,.72)'; roundRect(s.x+rad+3,s.y-8,tw+12,16,5); ctx.fill(); ctx.fillStyle='#ffd6ea'; ctx.fillText(t.label,s.x+rad+9,s.y+4); }
+  // connect pending line
+  if(ED.tool==='connect'&&ED.connectFrom&&ED.hover3){ const d=config.devices.find(x=>x.id===ED.connectFrom); const P=d&&dev3(d); const a=P&&project(P,C,v); if(a){ ctx.setLineDash([6,5]);ctx.strokeStyle='#6d8bff';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(ED.hover3.x,ED.hover3.y);ctx.stroke();ctx.setLineDash([]); } }
+}
+function pick3d(e,v,C){ const r=canvas.getBoundingClientRect(); const mx=e.clientX-r.left,my=e.clientY-r.top; let best=null,bd=18;
+  for(const t of config.talkers){ const s=project(talker3(t),C,v); if(!s)continue; const dist=Math.hypot(s.x-mx,s.y-my); if(dist<bd){bd=dist;best={type:'talker',id:t.id};} }
+  for(const d of config.devices){ const P=dev3(d); if(!P)continue; const s=project(P,C,v); if(!s)continue; const dist=Math.hypot(s.x-mx,s.y-my); if(dist<bd){bd=dist;best={type:'device',id:d.id};} }
+  return best; }
+
+/* ---- 3D pointer interaction ---- */
+function on3dDown(e){ const v=view(),C=camera(); canvas.setPointerCapture(e.pointerId);
+  if(ED.tool==='connect'){ const hit=pick3d(e,v,C); const id=hit&&hit.type==='device'?hit.id:null; if(!id){ ED.orbit={lastX:e.clientX,lastY:e.clientY}; return; }
+    if(!ED.connectFrom){ ED.connectFrom=id; return redraw(); } if(ED.connectFrom===id){ ED.connectFrom=null; return redraw(); }
+    const conn=resolveConnection(ED.connectFrom,id); ED.connectFrom=null; if(!conn) return toast('No compatible free ports'); return setConfig(CAP.route(config,conn.from,conn.to)); }
+  const hit=pick3d(e,v,C);
+  if(hit){ if(hit.type==='talker'){ const t=config.talkers.find(x=>x.id===hit.id); ED.selection={kind:'talker',id:hit.id}; ED.move3={id:hit.id,type:'talker',h:talkerElev(t)}; }
+    else { const d=config.devices.find(x=>x.id===hit.id); ED.selection={kind:'device',id:hit.id}; ED.move3={id:hit.id,type:'device',h:elev3d(d)}; } render(); return; }
+  ED.selection=null; ED.orbit={lastX:e.clientX,lastY:e.clientY}; render();
+}
+function on3dMove(e){ const rect=canvas.getBoundingClientRect(); ED.hover3={x:e.clientX-rect.left,y:e.clientY-rect.top};
+  const v=view(),C=camera();
+  if(ED.move3){ const p=rayFloor(e,v,C,ED.move3.h); if(p){ ED.drag={kind:ED.move3.type,id:ED.move3.id,pos:{x:snap(p.x),y:snap(p.y)}}; document.getElementById('coord').textContent=`x ${p.x.toFixed(2)} , y ${p.y.toFixed(2)}`; redraw(); } return; }
+  if(ED.orbit){ const dx=e.clientX-ED.orbit.lastX,dy=e.clientY-ED.orbit.lastY; ED.orbit.lastX=e.clientX;ED.orbit.lastY=e.clientY; cam.yaw-=dx*0.008; cam.pitch=Math.max(0.06,Math.min(1.45,cam.pitch+dy*0.008)); }
+  redraw();
+}
+function on3dUp(){ if(ED.move3){ const d=ED.drag; ED.move3=null; ED.drag=null;
+    if(d?.kind==='device') setConfig(CAP.setDevicePosition(config,d.id,d.pos));
+    else if(d?.kind==='talker') setConfig(CAP.setTalkerPosition(config,d.id,d.pos));
+    else redraw(); return; } ED.orbit=null; }
+
+function setView(m){ viewMode=m; document.querySelectorAll('#viewSeg button').forEach(x=>x.classList.toggle('active',x.dataset.view===m));
+  if(m==='3d'){ document.querySelectorAll('.ctxbar').forEach(c=>c.classList.remove('show')); frameCamera(); canvas.style.cursor='grab'; } else { setTool(ED.tool); }
+  redraw(); }
+function frameCamera(){ const b=boundsOf(config); cam.dist=Math.max(7,Math.max(b.maxX-b.minX,b.maxY-b.minY,roomH()*1.4)*1.6); }
+document.getElementById('viewSeg').addEventListener('click',(e)=>{ const b=e.target.closest('button[data-view]'); if(b) setView(b.dataset.view); });
+canvas.addEventListener('wheel',(e)=>{ if(viewMode!=='3d')return; e.preventDefault(); cam.dist=Math.max(3,Math.min(70,cam.dist*Math.exp(e.deltaY*0.0012))); redraw(); },{passive:false});
+
+/* ---- tool switching ---- */
+document.getElementById('toolSeg').addEventListener('click',(e)=>{ const b=e.target.closest('button[data-tool]'); if(!b)return; setTool(b.dataset.tool); });
+function setTool(tool){ ED.tool=tool; ED.drawPts=[]; ED.drag=null; ED.connectFrom=null;
+  document.querySelectorAll('#toolSeg button').forEach(x=>x.classList.toggle('active',x.dataset.tool===tool));
+  document.getElementById('ctxRoom').classList.toggle('show',tool==='room');
+  document.getElementById('ctxDevice').classList.toggle('show',tool==='device');
+  document.getElementById('ctxZone').classList.toggle('show',tool==='zone');
+  canvas.style.cursor = tool==='select'?'grab':'crosshair'; redraw(); }
+
+/* ---- hit testing ---- */
+function distToSeg(p,a,b){ const dx=b.x-a.x,dy=b.y-a.y,l2=dx*dx+dy*dy; if(!l2)return Math.hypot(p.x-a.x,p.y-a.y); let t=((p.x-a.x)*dx+(p.y-a.y)*dy)/l2; t=Math.max(0,Math.min(1,t)); return Math.hypot(p.x-(a.x+t*dx),p.y-(a.y+t*dy)); }
+function hitTest(world,v){
+  const sp=w2s(world,v);
+  for(const t of config.talkers){ const s=w2s(t.position,v); if(Math.hypot(s.x-sp.x,s.y-sp.y)<14) return {kind:'talker',id:t.id,pos:t.position}; }
+  for(const d of config.devices){ if(d.position){ const s=w2s(d.position,v); if(Math.hypot(s.x-sp.x,s.y-sp.y)<14) return {kind:'device',id:d.id,pos:d.position}; } }
+  for(const d of config.devices){ if(d.type!=='microphoneArray')continue; for(const z of d.zones){ if(z.shape.kind!=='rect')continue; const c=shapeCorners(z.shape).map(p=>w2s(p,v)); if(Math.hypot(c[2].x-sp.x,c[2].y-sp.y)<10) return {kind:'zone-resize',arrayId:d.id,zoneId:z.id,shape:z.shape}; } }
+  for(const d of config.devices){ if(d.type!=='microphoneArray')continue; for(const z of d.zones){ if(z.shape.kind!=='rect')continue; const{origin:o,width:w,height:h}=z.shape; if(world.x>=o.x&&world.x<=o.x+w&&world.y>=o.y&&world.y<=o.y+h) return {kind:'zone-move',arrayId:d.id,zoneId:z.id,shape:z.shape,grab:{dx:world.x-o.x,dy:world.y-o.y}}; } }
+  if(config.room){ for(let i=0;i<config.room.vertices.length;i++){ const s=w2s(config.room.vertices[i],v); if(Math.hypot(s.x-sp.x,s.y-sp.y)<9) return {kind:'vertex',index:i,pos:config.room.vertices[i]}; } }
+  // routes
+  for(const r of config.routes){ const f=CAP.findPort(config,r.fromPortId),t=CAP.findPort(config,r.toPortId); if(!f||!t)continue; const a=config.devices.find(d=>d.id===f.deviceId),b=config.devices.find(d=>d.id===t.deviceId); if(!a?.position||!b?.position)continue; if(distToSeg(sp,w2s(a.position,v),w2s(b.position,v))<7) return {kind:'route',id:r.id}; }
+  return null;
+}
+
+/* ---- pointer events ---- */
+canvas.addEventListener('pointermove',(e)=>{ if(viewMode==='3d') return on3dMove(e); const v=view(),w=mouseW(e,v); document.getElementById('coord').textContent=`x ${w.x.toFixed(2)} , y ${w.y.toFixed(2)}`;
+  if(ED.tool==='room'||(ED.tool==='connect'&&ED.connectFrom)){ ED.hover={x:snap(w.x),y:snap(w.y)}; return redraw(); }
+  if(!ED.drag)return; const p={x:snap(w.x),y:snap(w.y)};
+  if(ED.drag.kind==='device'||ED.drag.kind==='talker')ED.drag.pos=p;
+  else if(ED.drag.kind==='vertex')ED.drag.pos=p;
+  else if(ED.drag.kind==='zone-move')ED.drag.shape={...ED.drag.shape,origin:{x:snap(p.x-ED.drag.grab.dx),y:snap(p.y-ED.drag.grab.dy)}};
+  else if(ED.drag.kind==='zone-resize')ED.drag.shape={...ED.drag.shape,width:Math.max(0.3,snap(p.x-ED.drag.shape.origin.x)),height:Math.max(0.3,snap(p.y-ED.drag.shape.origin.y))};
+  else if(ED.drag.kind==='zone-new')ED.drag.cur=p;
+  redraw(); });
+
+canvas.addEventListener('pointerdown',(e)=>{ if(viewMode==='3d') return on3dDown(e); const v=view(),w=mouseW(e,v),p={x:snap(w.x),y:snap(w.y)}; canvas.setPointerCapture(e.pointerId);
+  try{
+    if(ED.tool==='select'){ const hit=hitTest(w,v); ED.drag=(hit&&hit.kind!=='route')?hit:null;
+      if(hit){ if(hit.kind==='device')ED.selection={kind:'device',id:hit.id}; else if(hit.kind==='talker')ED.selection={kind:'talker',id:hit.id}; else if(hit.kind==='zone-move'||hit.kind==='zone-resize')ED.selection={kind:'zone',arrayId:hit.arrayId,zoneId:hit.zoneId}; else if(hit.kind==='route')ED.selection={kind:'route',id:hit.id}; }
+      else ED.selection=null; renderSelection(); render(); return; }
+    if(ED.tool==='connect'){ const hit=hitTest(w,v); const dev=hit?.kind==='device'?hit.id:null; if(!dev)return;
+      if(!ED.connectFrom){ ED.connectFrom=dev; return redraw(); }
+      if(ED.connectFrom===dev){ ED.connectFrom=null; return redraw(); }
+      const conn=resolveConnection(ED.connectFrom,dev); const from=ED.connectFrom; ED.connectFrom=null;
+      if(!conn) return toast('No compatible free ports between those devices');
+      return setConfig(CAP.route(config,conn.from,conn.to)); }
+    if(ED.tool==='room'){ ED.drawPts.push(p); return redraw(); }
+    if(ED.tool==='device'){ const id=document.getElementById('placeDevice').value; if(!id)return toast('Add a device first'); return setConfig(CAP.setDevicePosition(config,id,p)); }
+    if(ED.tool==='zone'){ const aid=document.getElementById('zoneArray').value; if(!aid)return toast('Add a microphone array first');
+      const kind=document.querySelector('input[name="zk"]:checked').value;
+      if(kind==='dedicated'){ const id=`${aid}-z${zoneSeq++}`; return setConfig(CAP.addCoverageZone(config,aid,CAP.dedicatedZone(id,`Always-on ${id}`,p))); }
+      ED.drag={kind:'zone-new',arrayId:aid,start:p,cur:p,zoneType:kind}; redraw(); }
+  }catch(err){ toast(err.message); }
+});
+
+canvas.addEventListener('pointerup',()=>{ if(viewMode==='3d') return on3dUp(); const d=ED.drag; ED.drag=null; if(!d)return;
+  try{
+    if(d.kind==='device') setConfig(CAP.setDevicePosition(config,d.id,d.pos));
+    else if(d.kind==='talker') setConfig(CAP.setTalkerPosition(config,d.id,d.pos));
+    else if(d.kind==='vertex') setConfig(CAP.setRoom(config,{...config.room,vertices:config.room.vertices.map((p,i)=>i===d.index?d.pos:p)}));
+    else if(d.kind==='zone-move'||d.kind==='zone-resize') setConfig(CAP.setZoneShape(config,d.arrayId,d.zoneId,d.shape));
+    else if(d.kind==='zone-new'){ const o={x:Math.min(d.start.x,d.cur.x),y:Math.min(d.start.y,d.cur.y)}; const w=Math.abs(d.cur.x-d.start.x),h=Math.abs(d.cur.y-d.start.y);
+      if(w>=0.3&&h>=0.3){ const id=`${d.arrayId}-z${zoneSeq++}`; const shape={kind:'rect',origin:o,width:snap(w),height:snap(h)}; setConfig(CAP.addCoverageZone(config,d.arrayId,makeZone(d.zoneType||'dynamic',id,shape))); } else redraw(); }
+  }catch(err){ toast(err.message); redraw(); }
+});
+
+canvas.addEventListener('dblclick',()=>{ if(viewMode==='3d')return; if(ED.tool!=='room')return; const pts=ED.drawPts.filter((p,i,a)=>i===0||p.x!==a[i-1].x||p.y!==a[i-1].y); ED.drawPts=[];ED.hover=null;
+  if(pts.length<3){ redraw(); return; } const h=+document.getElementById('roomH').value||3; setConfig(CAP.setRoom(config,{vertices:pts,height:h,units:'meters',objects:[]})); });
+
+/* ---- keyboard ---- */
+window.addEventListener('keydown',(e)=>{
+  const tag=document.activeElement?.tagName; if(tag==='INPUT'||tag==='SELECT'||tag==='TEXTAREA') return;
+  if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){ e.preventDefault(); return e.shiftKey?redo():undo(); }
+  if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='y'){ e.preventDefault(); return redo(); }
+  if(e.key==='Delete'||e.key==='Backspace'){ if(ED.selection){ e.preventDefault(); deleteSelection(); } return; }
+  if(e.key==='Escape'){ ED.selection=null; ED.connectFrom=null; ED.drawPts=[]; render(); return; }
+  if(e.key==='2'){ return setView('2d'); } if(e.key==='3'){ return setView('3d'); }
+  const map={v:'select',c:'connect',r:'room',d:'device',z:'zone'}; if(map[e.key.toLowerCase()]) setTool(map[e.key.toLowerCase()]);
+  if(e.altKey&&e.key.toLowerCase()==='a'){ e.preventDefault(); setConfig(CAP.autoConfigure(config)); toast('Auto-configured','ok'); }
+});
+
+window.addEventListener('resize',redraw);
+new ResizeObserver(redraw).observe(canvas);
+
+/* ---- init ---- */
+devType.dispatchEvent(new Event('change'));
+render();
+requestAnimationFrame(redraw);
+</script>
+</body>
+</html>
