@@ -310,6 +310,10 @@ npm run build     # emit ESM + .d.ts to dist/
 - **JSON round-trip** — lossless serialize/deserialize + version/shape guards.
 - **Integration** — the worked reference scenario, end to end.
 
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for the version history.
+
 ## License
 
 MIT.

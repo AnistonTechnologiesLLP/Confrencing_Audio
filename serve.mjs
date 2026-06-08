@@ -34,7 +34,11 @@ const server = createServer(async (req, res) => {
       return;
     }
     const body = await readFile(filePath);
-    res.writeHead(200, { 'content-type': TYPES[extname(filePath)] ?? 'application/octet-stream' });
+    res.writeHead(200, {
+      'content-type': TYPES[extname(filePath)] ?? 'application/octet-stream',
+      // Always serve fresh files during local development (avoid stale bundles).
+      'cache-control': 'no-store, max-age=0',
+    });
     res.end(body);
   } catch {
     res.writeHead(404, { 'content-type': 'text/plain' }).end('Not found');

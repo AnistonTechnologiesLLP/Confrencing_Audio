@@ -172,6 +172,11 @@
 
   pre#json { margin:0; padding:13px; background:#070a12; border:1px solid var(--border); border-radius:10px; max-height:62vh; overflow:auto;
     font:11.5px/1.55 var(--mono); color:#cdd6f4; }
+  .item.col { flex-direction:column; align-items:stretch; gap:7px; }
+  .angrow { display:flex; flex-wrap:wrap; gap:5px; padding-left:20px; }
+  .angchip { font-size:10.5px; font-family:var(--mono); padding:2px 7px; border-radius:6px; background:#0e1830; border:1px solid #245; color:#7fe3ff; }
+  .angchip b { color:#bdeeff; }
+  .ahint { font-size:10.5px; color:var(--faint); font-style:italic; }
   table.angtab { width:100%; border-collapse:collapse; font-size:11.5px; margin-top:4px; }
   table.angtab th { text-align:left; color:var(--muted); font-weight:500; padding:4px 6px; border-bottom:1px solid var(--border); }
   table.angtab td { padding:4px 6px; border-bottom:1px solid var(--border); font-family:var(--mono); font-size:11px; }
@@ -734,16 +739,26 @@ function renderPeople(){
   document.getElementById('talkerCount').textContent = config.talkers.length?`${config.talkers.length}`:'';
   const list=document.getElementById('talkerList');
   if(!config.talkers.length){ list.innerHTML='<div class="empty">No talkers — add a person to check coverage &amp; angles.</div>'; return; }
+  const arrays=config.devices.filter(d=>d.type==='microphoneArray');
+  const placedArrays=arrays.filter(a=>a.position);
   list.innerHTML=config.talkers.map(t=>{
     const sel=ED.selection?.kind==='talker'&&ED.selection.id===t.id;
     const cov=CAP.talkerCoverage(config,t.id);
     const badge = cov.captured?'<span class="tag" style="color:#3ddc97;border-color:#1f6b4d">recorded</span>'
       : cov.excludedBy.length?'<span class="tag err">excluded</span>'
       : '<span class="tag" style="color:#9aa4c2">not covered</span>';
-    return `<div class="item ${sel?'sel':''}" data-action="select-talker" data-id="${t.id}">
-      <span class="dot" style="background:${TALKER_COLOR}"></span>
-      <div class="meta"><b>${esc(t.label)}</b><small>(${t.position.x}, ${t.position.y}) · ${talkerElev(t)} m</small></div>
-      <div class="grow"></div>${badge}<button class="btn sm ghost" data-action="remove-talker" data-id="${t.id}">✕</button></div>`;
+    const angs=placedArrays.map(a=>{ const ang=CAP.arrayToTalkerAngles(config,a.id,t.id); return ang?`<span class="angchip" title="azimuth ${Math.round(ang.azimuthDeg)}° · down-tilt ${Math.round(ang.downtiltDeg)}°">${esc(a.label)} <b>${Math.round(ang.offNadirDeg)}°</b> · ${ang.distance.toFixed(1)}m</span>`:''; }).filter(Boolean).join('');
+    const angRow = arrays.length===0 ? '<span class="ahint">add a microphone array to compute angles</span>'
+      : placedArrays.length===0 ? '<span class="ahint">place an array on the canvas to compute angles</span>'
+      : angs;
+    return `<div class="item col ${sel?'sel':''}" data-action="select-talker" data-id="${t.id}">
+      <div style="display:flex;align-items:center;gap:10px;width:100%">
+        <span class="dot" style="background:${TALKER_COLOR}"></span>
+        <div class="meta"><b>${esc(t.label)}</b><small>(${t.position.x}, ${t.position.y}) · ${talkerElev(t)} m</small></div>
+        <div class="grow"></div>${badge}<button class="btn sm ghost" data-action="remove-talker" data-id="${t.id}">✕</button>
+      </div>
+      <div class="angrow">${angRow}</div>
+    </div>`;
   }).join('');
 }
 
