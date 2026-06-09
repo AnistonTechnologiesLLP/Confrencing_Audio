@@ -17,6 +17,9 @@ import {
 } from './codes.js';
 import { getPrimaryProcessor, analyzeAecReference } from '../dsp/aec.js';
 import { isValidGatingSensitivity, NLP_LEVELS } from '../dsp/automixer.js';
+import { getDeviceProfile, deviceCapabilities } from '../profiles/profiles.js';
+import { dspBlockParamIssues } from '../dsp/blocks.js';
+import { isProcessor } from '../model/devices.js';
 
 /**
  * Validate a {@link SystemConfig}. Pure and deterministic: same input → same
@@ -39,6 +42,8 @@ export function validate(config: SystemConfig): ValidationResult {
   validateCoverage(config, add);
   validateAec(config, add);
   validateAutomixer(config, add);
+  validateProfilesAndBlocks(config, add);
+  validateCommissioning(config, add);
 
   const errors = issues.filter((i) => i.severity === 'error');
   const warnings = issues.filter((i) => i.severity === 'warning');
@@ -206,6 +211,92 @@ function validateAutomixer(config: SystemConfig, add: AddIssue): void {
           `range [${GATING_SENSITIVITY_MIN}, ${GATING_SENSITIVITY_MAX}].`,
         [am.processorId, ch.inputBusId],
       );
+    }
+  }
+}
+
+function validateProfilesAndBlocks(config: SystemConfig, add: AddIssue): void {
+  for (const device of config.devices) {
+    if (device.profileId !== undefined) {
+      const profile = getDeviceProfile(device.profileId);
+      if (!profile) {
+        add('error', 'DEVICE_PROFILE_UNKNOWN', `Device "${device.id}" references unknown profile "${device.profileId}".`, [device.id]);
+      } else if (!profile.appliesTo.includes(device.type)) {
+        add(
+          'error',
+          'DEVICE_CAPABILITY_MISMATCH',
+          `Profile "${device.profileId}" (for ${profile.appliesTo.join('/')}) cannot be assigned to ${device.type} "${device.id}".`,
+          [device.id],
+        );
+      }
+    }
+    const caps = deviceCapabilities(device);
+    const blocks = device.dspBlocks ?? [];
+    for (const block of blocks) {
+      if (!caps.supportedBlocks.includes(block.kind)) {
+        add(
+          'error',
+          'DSP_BLOCK_UNSUPPORTED',
+          `DSP block "${block.kind}" is not supported by device "${device.id}" (profile ${device.profileId ?? 'none'}).`,
+          [device.id, block.id],
+        );
+      }
+      const paramIssues = dspBlockParamIssues(block);
+      if (paramIssues.length > 0) {
+        add('error', 'DSP_BLOCK_INVALID', `DSP block "${block.id}" on "${device.id}": ${paramIssues.join('; ')}.`, [device.id, block.id]);
+      }
+      if (block.targetBusId !== undefined) {
+        const resolved = isProcessor(device) && device.buses.some((b) => b.id === block.targetBusId);
+        if (!resolved) {
+          add('error', 'DSP_TARGET_UNRESOLVED', `DSP block "${block.id}" on "${device.id}" targets unknown bus "${block.targetBusId}".`, [device.id, block.id]);
+        }
+      }
+    }
+  }
+}
+
+/** Soft commissioning checks (warnings) — see README. */
+function validateCommissioning(config: SystemConfig, add: AddIssue): void {
+  const hasFarEnd = config.devices.some((d) => d.type === 'codec');
+  const mics = config.devices.filter(isMicDevice);
+  const processor = getPrimaryProcessor(config);
+
+  if (!hasFarEnd && mics.some((m) => m.aec.enabled)) {
+    add('warning', 'AEC_NO_FAR_END', 'One or more mics have AEC enabled but there is no far-end (codec) source in the configuration.', mics.filter((m) => m.aec.enabled).map((m) => m.id));
+  }
+  if (processor && mics.length > 0 && config.automixer.outputBusId === null) {
+    add('warning', 'AUTOMIX_OUTPUT_UNSET', 'Microphones exist but the automixer output bus is not set.', [processor.id]);
+  }
+  for (const link of config.muteLinks) {
+    for (const deviceId of link.linkedDeviceIds) {
+      const device = config.devices.find((d) => d.id === deviceId);
+      if (device && !deviceCapabilities(device).mute) {
+        add('warning', 'MUTE_LINK_UNSUPPORTED', `Mute link "${link.id}" targets device "${deviceId}" which has no mute capability.`, [link.id, deviceId]);
+      }
+    }
+  }
+  for (const device of config.devices) {
+    const blocks = device.dspBlocks ?? [];
+    if (blocks.length > 0 && !blocks.some((b) => b.kind === 'gain' || b.kind === 'mute')) {
+      add('warning', 'DSP_CHAIN_NO_LEVEL', `Device "${device.id}" has a DSP chain with no gain or mute stage.`, [device.id]);
+    }
+  }
+  validateNaming(config, add);
+}
+
+function validateNaming(config: SystemConfig, add: AddIssue): void {
+  const byLabel = new Map<string, string[]>();
+  for (const device of config.devices) {
+    if (device.label.trim() === '') {
+      add('warning', 'NAMING_EMPTY_LABEL', `Device "${device.id}" has an empty label.`, [device.id]);
+    }
+    const list = byLabel.get(device.label) ?? [];
+    list.push(device.id);
+    byLabel.set(device.label, list);
+  }
+  for (const [label, ids] of byLabel) {
+    if (ids.length > 1 && label.trim() !== '') {
+      add('warning', 'NAMING_DUPLICATE_LABEL', `${ids.length} devices share the label "${label}".`, ids);
     }
   }
 }

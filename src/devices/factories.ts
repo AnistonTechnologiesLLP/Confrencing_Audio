@@ -7,6 +7,7 @@ import type {
   Codec,
 } from '../model/devices.js';
 import { createMatrix } from '../matrix/matrix.js';
+import { defaultProfileId } from '../profiles/profiles.js';
 
 /**
  * Factory functions for the generic device catalog. Devices are modeled on
@@ -81,6 +82,8 @@ export function createProcessor(
     ports: [...inputPorts, ...outputPorts],
     matrix,
     buses: [...matrix.inputBuses, ...matrix.outputBuses],
+    profileId: defaultProfileId('processor'),
+    dspBlocks: [],
   };
 }
 
@@ -96,6 +99,8 @@ export function createWirelessMic(
     label,
     ports: [makePort(id, 'output', transport, 1)],
     aec: { enabled: false, referenceBusId: null },
+    profileId: defaultProfileId('wirelessMic'),
+    dspBlocks: [],
   };
 }
 
@@ -111,6 +116,8 @@ export function createWiredMic(
     label,
     ports: [makePort(id, 'output', transport, 1)],
     aec: { enabled: false, referenceBusId: null },
+    profileId: defaultProfileId('wiredMic'),
+    dspBlocks: [],
   };
 }
 
@@ -125,6 +132,8 @@ export function createLoudspeaker(
     type: 'loudspeaker',
     label,
     ports: [makePort(id, 'input', transport, 1)],
+    profileId: defaultProfileId('loudspeaker'),
+    dspBlocks: [],
   };
 }
 
@@ -138,5 +147,7 @@ export function createCodec(id: string, label: string, transport: Transport = 'd
     type: 'codec',
     label,
     ports: [makePort(id, 'output', transport, 1), makePort(id, 'input', transport, 1)],
+    profileId: defaultProfileId('codec'),
+    dspBlocks: [],
   };
 }

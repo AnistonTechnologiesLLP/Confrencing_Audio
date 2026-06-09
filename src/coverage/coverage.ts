@@ -102,6 +102,8 @@ export function createMicrophoneArray(
     coverageMode: mode,
     zones: [...zones],
     aec: { enabled: false, referenceBusId: null },
+    profileId: 'generic-ceiling-array',
+    dspBlocks: [],
   };
   if (position !== undefined) array.position = position;
   return array;

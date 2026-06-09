@@ -8,6 +8,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 The JSON **config schema** is versioned independently via `CONFIG_VERSION`
 (currently `1`); changes that affect persisted documents note it explicitly.
 
+## [1.7.0] - 2026-06-09
+
+Vendor-neutral DSP and device-capability modeling — a Shure-Designer-inspired
+foundation that stays manufacturer-agnostic and adds no real-time audio.
+
+### Added
+- **Device capability profiles** (`src/profiles/`): a vendor-neutral catalog
+  (`generic-ceiling-array`, `generic-table-array`, `generic-wireless-mic`,
+  `generic-wired-mic`, `generic-hardware-dsp`, `generic-software-dsp`,
+  `generic-loudspeaker`, `generic-codec`, `generic-mute-control`). Each declares
+  `appliesTo`, AEC/automix/mute capabilities, supported DSP blocks, coverage
+  limits, and default ports. Exports: `DEVICE_PROFILES`, `getDeviceProfile`,
+  `deviceCapabilities`, `defaultProfileId`, `assignDeviceProfile`. Factories
+  assign a matching default `profileId`; capabilities are **derived**, not stored.
+- **DSP block chains** (`Device.dspBlocks`): kinds `gain`, `mute`, `peq4`, `agc`,
+  `compressor`, `delay`, `noiseReduction`, `deverb`, each with typed, range-checked
+  parameters (settings only — no audio). Builders `createDspBlock`,
+  `dspBlockParamIssues`, `defaultPeqBand`; pure API `addDspBlock`,
+  `updateDspBlock`, `removeDspBlock`, `setDspBlockEnabled`. Blocks may target a
+  processor bus (`targetBusId`).
+- **Validation codes**: errors `DEVICE_PROFILE_UNKNOWN`,
+  `DEVICE_CAPABILITY_MISMATCH`, `DSP_BLOCK_UNSUPPORTED`, `DSP_BLOCK_INVALID`,
+  `DSP_TARGET_UNRESOLVED`; commissioning warnings `AEC_NO_FAR_END`,
+  `AUTOMIX_OUTPUT_UNSET`, `MUTE_LINK_UNSUPPORTED`, `DSP_CHAIN_NO_LEVEL`. The AEC
+  self-reference behavior is unchanged.
+- **UI**: profile selector + capability hint in the device inspector; the AEC/DSP
+  tab gains **Processing blocks** (per-device chain editor with compact editors
+  for every block kind incl. PEQ bands) and **Mute / logic** sections.
+- Tests for profiles, DSP block builders, validation ranges, v1→v2 migration, and
+  JSON round-trip (73 tests total).
+
+### Changed
+- **`CONFIG_VERSION` 1 → 2.** `deserialize` accepts both v1 and v2; v1 documents
+  are migrated by filling each device's default `profileId` and an empty
+  `dspBlocks` chain. v2 serializes losslessly.
+
 ## [1.6.1] - 2026-06-08
 
 ### Fixed

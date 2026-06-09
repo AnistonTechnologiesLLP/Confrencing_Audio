@@ -12,13 +12,14 @@
  */
 
 import type { SystemConfig, Route } from './model/config.js';
-import { CONFIG_VERSION, findDevice } from './model/config.js';
+import { findDevice } from './model/config.js';
 import type { Talker } from './model/talker.js';
 import { DEFAULT_TALKER_ELEVATION_M } from './model/talker.js';
 import { pointInShape } from './model/geometry.js';
 import { steeringAngles, type SteeringAngles, type Point3D } from './geometry/angles.js';
 import type { Device, MicDevice, Processor } from './model/devices.js';
 import { isMicDevice, isProcessor } from './model/devices.js';
+import type { DspBlockConfig } from './model/dsp-blocks.js';
 import type { CoverageMode, CoverageZone } from './model/coverage.js';
 import type {
   AecConfig,
@@ -57,6 +58,17 @@ export * as matrix from './matrix/matrix.js';
 export * from './dsp/aec.js';
 export * from './dsp/automixer.js';
 export * from './dsp/mute.js';
+export {
+  DEVICE_PROFILES,
+  defaultProfileId,
+  getDeviceProfile,
+  deviceCapabilities,
+  FALLBACK_CAPABILITIES,
+  type DeviceProfile,
+  type DeviceCapabilities,
+  type ProfilePortDefaults,
+} from './profiles/profiles.js';
+export { createDspBlock, dspBlockParamIssues, defaultPeqBand } from './dsp/blocks.js';
 export { steeringAngles } from './geometry/angles.js';
 export type { Point3D, SteeringAngles } from './geometry/angles.js';
 export { validate } from './validation/validate.js';
@@ -68,24 +80,43 @@ export {
   type ValidationResult,
 } from './validation/codes.js';
 export { serialize, deserialize, DeserializeError } from './persistence/serialize.js';
+// --- 1.8.0: deployment, naming, routing summary, templates, projects ---
+export {
+  setDeploymentStatus,
+  markDeployed,
+  deploymentDiff,
+  type DeploymentDiff,
+} from './deployment/deployment.js';
+export { applyNamingScheme, suggestedLabel, labelCollisions, TYPE_LABEL } from './naming/naming.js';
+export {
+  subscriptions,
+  danteSubscriptions,
+  routingSummary,
+  signalFlowReport,
+  type Subscription,
+} from './routing/summary.js';
+export { deviceTemplate, instantiateTemplate, type DeviceTemplate } from './devices/templates.js';
+export {
+  PROJECT_VERSION,
+  createProject,
+  addRoom,
+  removeRoom,
+  renameRoom,
+  setActiveRoom,
+  updateRoom,
+  getRoom,
+  getActiveRoom,
+  serializeProject,
+  deserializeProject,
+  type Project,
+  type ProjectRoom,
+} from './project/project.js';
 
 // ---------------------------------------------------------------------------
 // Config lifecycle
 // ---------------------------------------------------------------------------
 
-/** Create an empty configuration. Matrix/automixer are wired when the first processor is added. */
-export function createConfig(meta: { name: string; createdAt: string }): SystemConfig {
-  return {
-    version: CONFIG_VERSION,
-    devices: [],
-    routes: [],
-    matrix: { processorId: '', inputBuses: [], outputBuses: [], cells: {} },
-    automixer: { processorId: '', channels: [], nlp: 'medium', outputBusId: null },
-    muteLinks: [],
-    talkers: [],
-    metadata: { ...meta },
-  };
-}
+export { createConfig } from './config/create.js';
 
 /**
  * Add a device. When the first {@link Processor} is added, the config's primary
@@ -525,6 +556,87 @@ export function configureAutomixer(
     );
   }
   return { ...config, automixer: { ...automixer } };
+}
+
+// ---------------------------------------------------------------------------
+// Device profiles & DSP blocks (v1.7.0)
+// ---------------------------------------------------------------------------
+
+/**
+ * Assign a capability profile to a device. Validation flags unknown profiles
+ * (`DEVICE_PROFILE_UNKNOWN`) and type mismatches (`DEVICE_CAPABILITY_MISMATCH`).
+ * Returns a new config.
+ */
+export function assignDeviceProfile(
+  config: SystemConfig,
+  deviceId: string,
+  profileId: string,
+): SystemConfig {
+  return mapDevice(config, deviceId, (d) => ({ ...d, profileId }));
+}
+
+/** Append a DSP block to a device's processing chain. Returns a new config. */
+export function addDspBlock(
+  config: SystemConfig,
+  deviceId: string,
+  block: DspBlockConfig,
+): SystemConfig {
+  return mapDevice(config, deviceId, (d) => {
+    const blocks = d.dspBlocks ?? [];
+    if (blocks.some((b) => b.id === block.id)) {
+      throw new Error(`Duplicate DSP block id "${block.id}" on device "${deviceId}".`);
+    }
+    return { ...d, dspBlocks: [...blocks, block] };
+  });
+}
+
+/**
+ * Patch a DSP block (shallow-merge top-level fields; deep-merge `params`).
+ * Returns a new config.
+ */
+export function updateDspBlock(
+  config: SystemConfig,
+  deviceId: string,
+  blockId: string,
+  patch: { enabled?: boolean; targetBusId?: string; params?: Record<string, unknown> },
+): SystemConfig {
+  return mapDevice(config, deviceId, (d) => ({
+    ...d,
+    dspBlocks: (d.dspBlocks ?? []).map((b) =>
+      b.id === blockId
+        ? ({
+            ...b,
+            ...patch,
+            params: { ...b.params, ...(patch.params ?? {}) },
+          } as DspBlockConfig)
+        : b,
+    ),
+  }));
+}
+
+/** Remove a DSP block by id. Returns a new config. */
+export function removeDspBlock(
+  config: SystemConfig,
+  deviceId: string,
+  blockId: string,
+): SystemConfig {
+  return mapDevice(config, deviceId, (d) => ({
+    ...d,
+    dspBlocks: (d.dspBlocks ?? []).filter((b) => b.id !== blockId),
+  }));
+}
+
+/** Enable/disable a DSP block. Returns a new config. */
+export function setDspBlockEnabled(
+  config: SystemConfig,
+  deviceId: string,
+  blockId: string,
+  enabled: boolean,
+): SystemConfig {
+  return mapDevice(config, deviceId, (d) => ({
+    ...d,
+    dspBlocks: (d.dspBlocks ?? []).map((b) => (b.id === blockId ? { ...b, enabled } : b)),
+  }));
 }
 
 // ---------------------------------------------------------------------------

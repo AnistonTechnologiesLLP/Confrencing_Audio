@@ -6,7 +6,7 @@ import type { RoomLayout } from './room.js';
 import type { Talker } from './talker.js';
 
 /** Current serialization schema version. Bump on breaking model changes. */
-export const CONFIG_VERSION = 1;
+export const CONFIG_VERSION = 2;
 
 /** A directed connection between an output port and an input port. */
 export interface Route {
@@ -16,6 +16,16 @@ export interface Route {
   fromPortId: string;
   /** Destination port id (must be an `input` port). */
   toPortId: string;
+}
+
+/** Lifecycle state of a configuration, modeling Designer's online/offline/deploy. No network I/O. */
+export type DeploymentStatus = 'design' | 'online' | 'deployed';
+
+/** Deployment state stored on a config (settings only). */
+export interface DeploymentState {
+  status: DeploymentStatus;
+  /** ISO timestamp of the last "deploy" action (caller-supplied). */
+  lastDeployedAt?: string;
 }
 
 /** The root configuration document. Round-trippable to/from JSON. */
@@ -36,6 +46,8 @@ export interface SystemConfig {
   muteLinks: MuteLink[];
   /** Talkers (people) placed for coverage/steering-angle planning. */
   talkers: Talker[];
+  /** Optional deployment lifecycle state (design/online/deployed). */
+  deployment?: DeploymentState;
   /** Document metadata. */
   metadata: { name: string; createdAt: string };
 }

@@ -1,5 +1,7 @@
 import type { SystemConfig } from '../model/config.js';
 import { CONFIG_VERSION } from '../model/config.js';
+import type { DeviceType } from '../model/devices.js';
+import { defaultProfileId } from '../profiles/profiles.js';
 
 /**
  * JSON persistence. The config is plain data (no Maps/Sets/functions/Dates), so
@@ -39,9 +41,9 @@ export function deserialize(json: string): SystemConfig {
   if (typeof obj.version !== 'number') {
     throw new DeserializeError('Missing numeric "version".');
   }
-  if (obj.version !== CONFIG_VERSION) {
+  if (obj.version !== 1 && obj.version !== CONFIG_VERSION) {
     throw new DeserializeError(
-      `Unsupported config version ${obj.version}; expected ${CONFIG_VERSION}.`,
+      `Unsupported config version ${obj.version}; expected 1 or ${CONFIG_VERSION}.`,
     );
   }
   for (const field of ['devices', 'routes', 'matrix', 'automixer', 'muteLinks', 'metadata']) {
@@ -52,5 +54,20 @@ export function deserialize(json: string): SystemConfig {
   }
   // Backward-compatible: `talkers` was added after v1 shipped; default it.
   if (!Array.isArray(obj.talkers)) obj.talkers = [];
+  if (obj.version === 1) migrateV1ToV2(obj);
   return parsed as SystemConfig;
+}
+
+/**
+ * In-place migration of a v1 document to v2: assign each device a default
+ * `profileId` (by type) and an empty `dspBlocks` chain, then bump the version.
+ * Lossless for everything else.
+ */
+function migrateV1ToV2(obj: Record<string, unknown>): void {
+  const devices = obj.devices as Array<Record<string, unknown>>;
+  for (const d of devices) {
+    if (typeof d.profileId !== 'string') d.profileId = defaultProfileId(d.type as DeviceType);
+    if (!Array.isArray(d.dspBlocks)) d.dspBlocks = [];
+  }
+  obj.version = CONFIG_VERSION;
 }

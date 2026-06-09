@@ -379,6 +379,14 @@
             <div class="h">Automixer</div>
             <div class="b" id="automixBody"></div>
           </div>
+          <div class="card">
+            <div class="h">Processing blocks</div>
+            <div class="b" id="dspBlocksBody"></div>
+          </div>
+          <div class="card">
+            <div class="h">Mute / logic</div>
+            <div class="b" id="muteBody"></div>
+          </div>
         </section>
 
         <!-- ISSUES -->
@@ -480,8 +488,21 @@ document.addEventListener('click',(e)=>{
     if(a==='focus-issue'){ return focusIssue(+el.dataset.idx); }
     if(a==='select-talker'){ ED.selection={kind:'talker',id:el.dataset.id}; switchTab('build'); return render(); }
     if(a==='remove-talker'){ e.stopPropagation(); return setConfig(CAP.removeTalker(config, el.dataset.id)); }
+    if(a==='add-dsp-block'){ const kind=document.getElementById('dspKind').value; if(!kind) return; return setConfig(CAP.addDspBlock(config, el.dataset.id, CAP.createDspBlock(kind, nextDspId(el.dataset.id, kind)))); }
+    if(a==='remove-dsp-block'){ return setConfig(CAP.removeDspBlock(config, el.dataset.id, el.dataset.block)); }
+    if(a==='add-peq-band'){ const d=config.devices.find(x=>x.id===el.dataset.id); const b=d.dspBlocks.find(x=>x.id===el.dataset.block); if(b.params.bands.length<4) return setConfig(CAP.updateDspBlock(config, el.dataset.id, el.dataset.block, {params:{bands:[...b.params.bands, CAP.defaultPeqBand()]}})); return; }
+    if(a==='remove-peq-band'){ const d=config.devices.find(x=>x.id===el.dataset.id); const b=d.dspBlocks.find(x=>x.id===el.dataset.block); const bands=b.params.bands.filter((_,i)=>i!==+el.dataset.band); return setConfig(CAP.updateDspBlock(config, el.dataset.id, el.dataset.block, {params:{bands}})); }
+    if(a==='add-mute-link'){ return addMuteLink(); }
+    if(a==='remove-mute-link'){ return setConfig({...config, muteLinks: config.muteLinks.filter(l=>l.id!==el.dataset.id)}); }
   }catch(err){ toast(err.message); }
 });
+function addMuteLink(){
+  const proc=primaryProc(); if(!proc) return;
+  const bus=config.automixer.outputBusId || (proc.matrix.outputBuses[0] && proc.matrix.outputBuses[0].id) || '';
+  const mics=config.devices.filter(d=>MIC_TYPES.has(d.type)).map(d=>d.id);
+  const id=`ml-${config.muteLinks.length+1}`;
+  setConfig({...config, muteLinks:[...config.muteLinks, CAP.createMuteLink(id, bus, mics, {syncToCodec:false})]});
+}
 
 document.addEventListener('change',(e)=>{
   const el=e.target;
@@ -501,6 +522,17 @@ document.addEventListener('change',(e)=>{
     if(el.dataset.action==='talker-elev'){ const z=+el.value; if(Number.isFinite(z)) return setConfig(CAP.setTalkerElevation(config, el.dataset.id, z)); return; }
     if(el.dataset.action==='pos'){ return commitPos(el.dataset.id); }
     if(el.dataset.action==='elev'){ const z=+el.value; if(Number.isFinite(z)) return setConfig(CAP.setDeviceElevation(config, el.dataset.id, z)); return; }
+    if(el.dataset.action==='set-profile'){ return setConfig(CAP.assignDeviceProfile(config, el.dataset.id, el.value)); }
+    if(el.dataset.action==='dsp-enable'){ return setConfig(CAP.setDspBlockEnabled(config, el.dataset.id, el.dataset.block, el.checked)); }
+    if(el.dataset.action==='dsp-mute'){ return setConfig(CAP.updateDspBlock(config, el.dataset.id, el.dataset.block, {params:{muted:el.checked}})); }
+    if(el.dataset.action==='dsp-param'){ const v=+el.value; if(Number.isFinite(v)) return setConfig(CAP.updateDspBlock(config, el.dataset.id, el.dataset.block, {params:{[el.dataset.key]:v}})); return; }
+    if(el.dataset.action==='dsp-target'){ return setConfig(CAP.updateDspBlock(config, el.dataset.id, el.dataset.block, {targetBusId: el.value||undefined})); }
+    if(el.dataset.action==='peq'||el.dataset.action==='peq-type'){
+      const d=config.devices.find(x=>x.id===el.dataset.id); const b=d.dspBlocks.find(x=>x.id===el.dataset.block);
+      const bands=b.params.bands.map((bd,i)=> i===+el.dataset.band ? {...bd, [el.dataset.action==='peq-type'?'type':el.dataset.key]: el.dataset.action==='peq-type'?el.value:+el.value} : bd);
+      return setConfig(CAP.updateDspBlock(config, el.dataset.id, el.dataset.block, {params:{bands}}));
+    }
+    if(el.dataset.action==='mute-toggle'){ return setConfig({...config, muteLinks: config.muteLinks.map(l=>l.id===el.dataset.id?{...l, muted: el.checked}:l)}); }
     if(el.dataset.action==='nlp'){ return setConfig(CAP.configureAutomixer(config, config.automixer.processorId, CAP.setNlp(config.automixer, el.value))); }
     if(el.dataset.action==='ch-alwayson'||el.dataset.action==='ch-gate'){ return commitChannel(el.dataset.bus); }
   }catch(err){ toast(err.message); }
@@ -649,7 +681,7 @@ function huddle(){
 
 /* ============================ render ============================ */
 function render(){
-  renderHeader(); renderSelection(); renderDevices(); renderCoverage(); renderPeople(); renderRouting(); renderAec(); renderAutomix();
+  renderHeader(); renderSelection(); renderDevices(); renderCoverage(); renderPeople(); renderRouting(); renderAec(); renderAutomix(); renderDspBlocks(); renderMute();
   renderRoomControls(); renderValidation();
   document.getElementById('json').textContent = CAP.serialize(config,true);
   redraw();
@@ -675,6 +707,9 @@ function renderSelection(){
           <div class="f"><label class="fl">Y (m)</label><input class="in" id="py-${d.id}" data-action="pos" data-id="${d.id}" type="number" step="0.1" value="${pos?pos.y:''}"/></div>
           <div class="f"><label class="fl">Z height${d.elevation===undefined?' (auto)':''}</label><input class="in" data-action="elev" data-id="${d.id}" type="number" step="0.1" value="${elev3d(d)}"/></div>
         </div>
+        <label class="fl" style="margin-top:9px">Capability profile</label>
+        <select class="in" data-action="set-profile" data-id="${d.id}">${profileOptions(d)}</select>
+        <div class="ahint" style="margin-top:5px">${capabilityHint(d)}</div>
         <div class="row" style="margin-top:10px">
           ${pos?`<button class="btn sm ghost" data-action="unplace" data-id="${d.id}">Unplace</button>`:''}
           <div class="grow"></div>
@@ -1165,6 +1200,75 @@ window.addEventListener('keydown',(e)=>{
 
 window.addEventListener('resize',redraw);
 new ResizeObserver(redraw).observe(canvas);
+
+// ============================ PROFILES & DSP BLOCKS ============================
+const BLOCK_LABEL={gain:'Gain',mute:'Mute',peq4:'PEQ (4-band)',agc:'AGC',compressor:'Compressor',delay:'Delay',noiseReduction:'Noise reduction',deverb:'Dereverb'};
+const BLOCK_PARAM_SCHEMA={
+  gain:[{k:'gainDb',l:'Gain dB',min:-60,max:12,step:0.5}],
+  agc:[{k:'targetDb',l:'Target dB',min:-40,max:0,step:1},{k:'maxGainDb',l:'Max gain',min:0,max:30,step:1}],
+  compressor:[{k:'thresholdDb',l:'Thresh',min:-60,max:0,step:1},{k:'ratio',l:'Ratio',min:1,max:20,step:0.5},{k:'attackMs',l:'Atk ms',min:0,max:200,step:1},{k:'releaseMs',l:'Rel ms',min:10,max:2000,step:10},{k:'makeupDb',l:'Makeup',min:0,max:24,step:0.5}],
+  delay:[{k:'delayMs',l:'Delay ms',min:0,max:500,step:1}],
+  noiseReduction:[{k:'amountDb',l:'Amount dB',min:0,max:30,step:1}],
+  deverb:[{k:'amount',l:'Amount',min:0,max:1,step:0.05}],
+};
+let dspSeq=1;
+function nextDspId(deviceId,kind){ return `${deviceId}-${kind}-${dspSeq++}`; }
+function profileOptions(d){
+  const applicable=Object.values(CAP.DEVICE_PROFILES).filter(p=>p.appliesTo.includes(d.type));
+  const ids=new Set(applicable.map(p=>p.id));
+  const opts=applicable.map(p=>`<option value="${p.id}" ${d.profileId===p.id?'selected':''}>${esc(p.label)}</option>`);
+  if(d.profileId && !ids.has(d.profileId)) opts.unshift(`<option value="${d.profileId}" selected>${esc(d.profileId)} (mismatch)</option>`);
+  return opts.join('');
+}
+function capabilityHint(d){
+  const c=CAP.deviceCapabilities(d);
+  const caps=[c.aec&&'AEC',c.automix&&'automix',c.mute&&'mute'].filter(Boolean).join(' · ');
+  return `Caps: ${caps||'—'} · blocks: ${c.supportedBlocks.join(', ')}`;
+}
+function renderDspBlocks(){
+  const el=document.getElementById('dspBlocksBody'); const sel=ED.selection;
+  if(!sel||sel.kind!=='device'){ el.innerHTML='<p class="hint">Select a device (Build tab) to edit its processing chain.</p>'; return; }
+  const d=config.devices.find(x=>x.id===sel.id); if(!d){ el.innerHTML=''; return; }
+  const caps=CAP.deviceCapabilities(d); const blocks=d.dspBlocks||[];
+  const kindOpts=caps.supportedBlocks.map(k=>`<option value="${k}">${BLOCK_LABEL[k]}</option>`).join('')||'<option value="">— none —</option>';
+  let html=`<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px"><b style="font-size:12.5px">${esc(d.label)}</b><div class="grow" style="flex:1"></div>
+    <select class="in" id="dspKind" style="width:auto">${kindOpts}</select>
+    <button class="btn sm" data-action="add-dsp-block" data-id="${d.id}">+ Add</button></div>`;
+  html+= blocks.length ? blocks.map(b=>blockEditor(d,b)).join('') : '<div class="empty">No blocks.</div>';
+  el.innerHTML=html;
+}
+function blockEditor(d,b){
+  const isProc=d.type==='processor';
+  const busOpts=isProc?`<select class="in" data-action="dsp-target" data-id="${d.id}" data-block="${b.id}" style="max-width:128px"><option value="">whole device</option>${d.buses.map(bu=>`<option value="${bu.id}" ${b.targetBusId===bu.id?'selected':''}>${esc(bu.id.replace(d.id+'-',''))}</option>`).join('')}</select>`:'';
+  let params;
+  if(b.kind==='mute') params=`<label class="radio"><input type="checkbox" data-action="dsp-mute" data-id="${d.id}" data-block="${b.id}" ${b.params.muted?'checked':''}/> muted</label>`;
+  else if(b.kind==='peq4') params=peqEditor(d,b);
+  else params=(BLOCK_PARAM_SCHEMA[b.kind]||[]).map(s=>`<div class="f" style="min-width:74px"><label class="fl">${s.l}</label><input class="in" type="number" data-action="dsp-param" data-id="${d.id}" data-block="${b.id}" data-key="${s.k}" min="${s.min}" max="${s.max}" step="${s.step}" value="${b.params[s.k]}"/></div>`).join('');
+  return `<div style="padding:9px 10px;background:var(--surface3);border:1px solid var(--border);border-radius:9px;margin-bottom:8px">
+    <div style="display:flex;align-items:center;gap:8px"><label class="switch"><input type="checkbox" data-action="dsp-enable" data-id="${d.id}" data-block="${b.id}" ${b.enabled?'checked':''}/><span></span></label>
+      <b style="font-size:12px">${BLOCK_LABEL[b.kind]}</b> ${busOpts}<div class="grow" style="flex:1"></div>
+      <button class="btn sm ghost" data-action="remove-dsp-block" data-id="${d.id}" data-block="${b.id}">✕</button></div>
+    <div class="row" style="margin-top:7px">${params}</div></div>`;
+}
+function peqEditor(d,b){
+  const types=CAP.PEQ_BAND_TYPES;
+  const rows=b.params.bands.map((band,i)=>`<div class="row" style="gap:5px;align-items:end;margin-bottom:5px;width:100%">
+    <div class="f"><label class="fl">f Hz</label><input class="in" type="number" data-action="peq" data-id="${d.id}" data-block="${b.id}" data-band="${i}" data-key="freqHz" value="${band.freqHz}"/></div>
+    <div class="f"><label class="fl">dB</label><input class="in" type="number" data-action="peq" data-id="${d.id}" data-block="${b.id}" data-band="${i}" data-key="gainDb" value="${band.gainDb}"/></div>
+    <div class="f"><label class="fl">Q</label><input class="in" type="number" step="0.1" data-action="peq" data-id="${d.id}" data-block="${b.id}" data-band="${i}" data-key="q" value="${band.q}"/></div>
+    <select class="in" data-action="peq-type" data-id="${d.id}" data-block="${b.id}" data-band="${i}" style="max-width:90px">${types.map(t=>`<option ${band.type===t?'selected':''}>${t}</option>`).join('')}</select>
+    <button class="btn sm ghost" data-action="remove-peq-band" data-id="${d.id}" data-block="${b.id}" data-band="${i}">✕</button></div>`).join('');
+  const add=b.params.bands.length<4?`<button class="btn sm" data-action="add-peq-band" data-id="${d.id}" data-block="${b.id}">+ band</button>`:'';
+  return `<div style="width:100%">${rows}${add}</div>`;
+}
+function renderMute(){
+  const el=document.getElementById('muteBody'); const proc=primaryProc();
+  let html = proc ? `<button class="btn sm" data-action="add-mute-link">+ Mute link (automix → all mics)</button>` : '<p class="hint">Add a processor to manage mute links.</p>';
+  html += config.muteLinks.length ? config.muteLinks.map(l=>`<div class="item" style="margin-top:8px"><div class="meta"><b>${esc(l.id)}</b><small>bus ${esc(l.processorOutputBusId)} → ${l.linkedDeviceIds.join(', ')||'—'}${l.syncToCodec?' · codec':''}</small></div>
+    <div class="grow"></div><label class="radio" style="margin:0"><input type="checkbox" data-action="mute-toggle" data-id="${l.id}" ${l.muted?'checked':''}/> muted</label>
+    <button class="btn sm ghost" data-action="remove-mute-link" data-id="${l.id}">✕</button></div>`).join('') : '<div class="empty" style="margin-top:8px">No mute links.</div>';
+  el.innerHTML=html;
+}
 
 /* ---- init ---- */
 devType.dispatchEvent(new Event('change'));

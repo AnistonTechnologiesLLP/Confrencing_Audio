@@ -2,6 +2,7 @@ import type { Port } from './ports.js';
 import type { Point2D } from './geometry.js';
 import type { CoverageMode, CoverageZone } from './coverage.js';
 import type { AecConfig } from './dsp.js';
+import type { DspBlockConfig } from './dsp-blocks.js';
 import type { MatrixMixer, Bus } from './matrix.js';
 
 /** Discriminator for the {@link Device} union. */
@@ -31,6 +32,13 @@ export interface BaseDevice {
    * geometry here this is a planning abstraction, not an acoustic model.
    */
   elevation?: number;
+  /**
+   * Vendor-neutral capability profile id (see `src/profiles/`). Factories assign
+   * a sensible default. Drives supported DSP blocks and AEC/automix/mute caps.
+   */
+  profileId?: string;
+  /** Ordered DSP processing chain (settings only — no audio is processed). */
+  dspBlocks?: DspBlockConfig[];
 }
 
 /**

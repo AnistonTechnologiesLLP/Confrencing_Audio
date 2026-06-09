@@ -164,6 +164,15 @@ A single pure, deterministic `validate(config) → { ok, errors, warnings }`.
 | `COVERAGE_ZONE_INVALID` | error | Zone type/`alwaysOn` mismatch or degenerate geometry. |
 | `MANUAL_LOBE_LIMIT` | error | Manual mode with more than 8 lobes/zones. |
 | `AUTOMIXER_INVALID` | error | Automixer gating/NLP value out of range. |
+| `DEVICE_PROFILE_UNKNOWN` | error | Device references a profile id not in the catalog. |
+| `DEVICE_CAPABILITY_MISMATCH` | error | Device's profile does not apply to its type. |
+| `DSP_BLOCK_UNSUPPORTED` | error | A DSP block kind is not supported by the device's profile. |
+| `DSP_BLOCK_INVALID` | error | A DSP block has out-of-range/invalid parameters. |
+| `DSP_TARGET_UNRESOLVED` | error | A DSP block's target bus does not resolve on the device. |
+| `AEC_NO_FAR_END` | warning | AEC enabled but no far-end (codec) source exists. |
+| `AUTOMIX_OUTPUT_UNSET` | warning | Mics exist but the automixer output bus is unset. |
+| `MUTE_LINK_UNSUPPORTED` | warning | A mute link targets a device with no mute capability. |
+| `DSP_CHAIN_NO_LEVEL` | warning | A device has DSP blocks but no gain/mute stage. |
 
 `ok` is `true` iff there are **no errors** (warnings are allowed).
 
@@ -309,6 +318,28 @@ npm run build     # emit ESM + .d.ts to dist/
 - **Matrix** — crosspoint set/route/clear/query + immutability.
 - **JSON round-trip** — lossless serialize/deserialize + version/shape guards.
 - **Integration** — the worked reference scenario, end to end.
+
+## Device profiles & DSP blocks (1.7.0)
+
+Each device carries a vendor-neutral **capability profile** (`profileId`) from a
+generic catalog (`DEVICE_PROFILES`) — ceiling/table array, wireless/wired mic,
+hardware/software DSP, loudspeaker, codec, mute-control. The profile derives the
+device's **capabilities** (AEC, automix, mute, supported DSP blocks, coverage
+limits); capabilities are never edited per device. Assign with
+`assignDeviceProfile`; validation flags unknown profiles and type mismatches.
+
+Devices also carry an ordered **DSP block chain** (`dspBlocks`) — `gain`, `mute`,
+`peq4`, `agc`, `compressor`, `delay`, `noiseReduction`, `deverb` — with typed,
+range-checked parameters (settings only; **no audio is processed**). Build with
+`createDspBlock` and the pure helpers `addDspBlock`, `updateDspBlock`,
+`removeDspBlock`, `setDspBlockEnabled`; a block may target a processor bus
+(`targetBusId`). Validation flags unsupported kinds, out-of-range params, and
+unresolved targets, plus soft commissioning warnings. In the UI these live in the
+device inspector (profile + capability hint) and the **Processing blocks** /
+**Mute / logic** sections of the AEC/DSP tab.
+
+**Schema version 2.** Configs serialize as `version: 2`; v1 documents load via
+automatic migration (default profile + empty DSP chain per device).
 
 ## Changelog
 

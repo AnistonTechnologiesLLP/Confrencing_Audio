@@ -33,7 +33,31 @@ export type ValidationCode =
   | 'MANUAL_LOBE_LIMIT'
   // --- automixer ---
   /** Automixer channel/NLP value out of range, or output bus unresolved. */
-  | 'AUTOMIXER_INVALID';
+  | 'AUTOMIXER_INVALID'
+  // --- profiles & DSP blocks (v1.7.0) ---
+  /** Device references a profile id not in the catalog. */
+  | 'DEVICE_PROFILE_UNKNOWN'
+  /** Device's profile does not apply to the device's type. */
+  | 'DEVICE_CAPABILITY_MISMATCH'
+  /** A DSP block kind is not supported by the device's profile. */
+  | 'DSP_BLOCK_UNSUPPORTED'
+  /** A DSP block has out-of-range/invalid parameters. */
+  | 'DSP_BLOCK_INVALID'
+  /** A DSP block's `targetBusId` does not resolve to a bus on the device. */
+  | 'DSP_TARGET_UNRESOLVED'
+  /** AEC enabled but no far-end (codec) source exists anywhere (warning). */
+  | 'AEC_NO_FAR_END'
+  /** Mics exist but the automixer output bus is unset (warning). */
+  | 'AUTOMIX_OUTPUT_UNSET'
+  /** A mute link targets a device whose profile has no mute capability (warning). */
+  | 'MUTE_LINK_UNSUPPORTED'
+  /** A device has DSP blocks but no gain/mute stage (warning). */
+  | 'DSP_CHAIN_NO_LEVEL'
+  // --- naming (v1.8.0) ---
+  /** Two or more devices share the same label (warning). */
+  | 'NAMING_DUPLICATE_LABEL'
+  /** A device has an empty/whitespace label (warning). */
+  | 'NAMING_EMPTY_LABEL';
 
 /** Human-readable, one-line descriptions keyed by code (used in the README/catalog). */
 export const CODE_DESCRIPTIONS: Record<ValidationCode, string> = {
@@ -49,6 +73,17 @@ export const CODE_DESCRIPTIONS: Record<ValidationCode, string> = {
   COVERAGE_ZONE_INVALID: 'Zone has invalid type/alwaysOn pairing or degenerate geometry.',
   MANUAL_LOBE_LIMIT: 'Manual mode with more than 8 lobes/zones.',
   AUTOMIXER_INVALID: 'Automixer value out of range or output bus unresolved.',
+  DEVICE_PROFILE_UNKNOWN: 'Device references a profile id not in the catalog.',
+  DEVICE_CAPABILITY_MISMATCH: "Device's profile does not apply to its type.",
+  DSP_BLOCK_UNSUPPORTED: "DSP block kind not supported by the device's profile.",
+  DSP_BLOCK_INVALID: 'DSP block has out-of-range/invalid parameters.',
+  DSP_TARGET_UNRESOLVED: "DSP block target bus does not resolve on the device.",
+  AEC_NO_FAR_END: 'AEC enabled but no far-end (codec) source exists.',
+  AUTOMIX_OUTPUT_UNSET: 'Mics exist but the automixer output bus is unset.',
+  MUTE_LINK_UNSUPPORTED: 'Mute link targets a device with no mute capability.',
+  DSP_CHAIN_NO_LEVEL: 'Device has DSP blocks but no gain/mute stage.',
+  NAMING_DUPLICATE_LABEL: 'Two or more devices share the same label.',
+  NAMING_EMPTY_LABEL: 'A device has an empty label.',
 };
 
 /** A single validation finding with references to the offending entities. */
