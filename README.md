@@ -173,6 +173,8 @@ A single pure, deterministic `validate(config) → { ok, errors, warnings }`.
 | `AUTOMIX_OUTPUT_UNSET` | warning | Mics exist but the automixer output bus is unset. |
 | `MUTE_LINK_UNSUPPORTED` | warning | A mute link targets a device with no mute capability. |
 | `DSP_CHAIN_NO_LEVEL` | warning | A device has DSP blocks but no gain/mute stage. |
+| `NAMING_DUPLICATE_LABEL` | warning | Two or more devices share the same label. |
+| `NAMING_EMPTY_LABEL` | warning | A device has an empty label. |
 
 `ok` is `true` iff there are **no errors** (warnings are allowed).
 
@@ -340,6 +342,26 @@ device inspector (profile + capability hint) and the **Processing blocks** /
 
 **Schema version 2.** Configs serialize as `version: 2`; v1 documents load via
 automatic migration (default profile + empty DSP chain per device).
+
+## Designer-inspired workflow (1.8.0)
+
+Vendor-neutral, configuration/validation-only features modeled on professional
+networked-audio design tools (still **no** real-time audio, Dante control, device
+discovery, firmware, or network I/O):
+
+- **Projects (multi-room)** — a `Project` holds several named rooms (each a
+  `SystemConfig`) with versioned, round-trippable JSON. In the browser app, a
+  **rooms bar** lets you add/switch/rename/remove rooms.
+- **Deployment** — a config-only `design`/`online`/`deployed` state plus a pure
+  `deploymentDiff(base, target)` (what would change on deploy). The **Deploy**
+  button marks the room deployed and toasts the diff.
+- **Naming** — `applyNamingScheme` / `suggestedLabel` and duplicate/empty-label
+  warnings; an **Auto-name** button.
+- **Routing views** — `routingSummary`, `danteSubscriptions`, `signalFlowReport`
+  surfaced in a **Routing summary / Dante hub** panel.
+- **Device templates** — capture a configured device (profile + DSP chain) and
+  stamp out copies (`deviceTemplate` / `instantiateTemplate`).
+- **Light/dark theme** toggle.
 
 ## Changelog
 

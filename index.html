@@ -194,6 +194,17 @@
   .toast.err { background:var(--err); color:#2a0009; } .toast.ok { background:var(--ok); color:#012616; } .toast.info { background:var(--surface3); border:1px solid var(--border); color:var(--text); }
   .kbd { font-family:var(--mono); font-size:10.5px; padding:1px 5px; border:1px solid var(--border); border-bottom-width:2px; border-radius:5px; background:var(--surface3); color:var(--muted); }
 
+  /* rooms bar */
+  .rooms-bar { display:flex; align-items:center; gap:5px; padding:6px 12px; background:#0d1322; border-bottom:1px solid var(--border); overflow-x:auto; }
+  .room-tab { display:inline-flex; align-items:center; gap:6px; padding:5px 11px; border-radius:8px 8px 0 0; background:var(--surface); border:1px solid var(--border); border-bottom:0; color:var(--muted); cursor:pointer; white-space:nowrap; font-size:12.5px; }
+  .room-tab.active { background:var(--surface3); color:var(--text); border-color:var(--accent); }
+  .room-tab .x { color:var(--faint); cursor:pointer; } .room-tab .x:hover { color:var(--err); }
+  .room-tab.add { background:transparent; border-style:dashed; color:var(--accent); }
+  .deploy-banner { display:flex; gap:10px; align-items:center; padding:7px 12px; background:#1a2236; border-bottom:1px solid var(--border); font-size:12px; color:var(--muted); }
+  .deploy-banner b { color:var(--ok); }
+  /* light theme */
+  body.light { --bg:#eef1f7; --bg-grad:radial-gradient(1200px 600px at 80% -10%, #dde6fb 0%, #eef1f7 55%); --surface:#ffffff; --surface2:#f4f6fb; --surface3:#eef1f8; --hover:#e4e9f5; --border:#cdd5e6; --text:#161c2b; --muted:#566081; --faint:#8590ab; --dante:#1f7ad6; --analog:#b06a12; }
+  body.light .logo svg path { stroke:#fff; }
   @media (max-width:1080px){ .inspector{ width:380px; } }
   @media (max-width:880px){ .workspace{ flex-direction:column; } .inspector{ width:auto; border-left:0; border-top:1px solid var(--border); max-height:46vh; } }
 </style>
@@ -215,6 +226,8 @@
       </select>
       <button class="btn" data-action="auto-config" title="Apply sensible defaults (Alt+A)">
         <svg viewBox="0 0 24 24" fill="none"><path d="M12 2v3m0 14v3M2 12h3m14 0h3M5 5l2 2m10 10l2 2M19 5l-2 2M7 17l-2 2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Auto-configure</button>
+      <button class="btn ghost" data-action="auto-name" title="Apply naming scheme">Auto-name</button>
+      <button class="btn ghost" data-action="deploy" title="Mark deployed &amp; show what changed">Deploy</button>
       <div class="sep"></div>
       <button class="btn icon" id="btnUndo" data-action="undo" title="Undo (Ctrl+Z)"><svg viewBox="0 0 24 24" fill="none"><path d="M9 7L4 12l5 5M4 12h11a5 5 0 0 1 0 10h-1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       <button class="btn icon" id="btnRedo" data-action="redo" title="Redo (Ctrl+Y)"><svg viewBox="0 0 24 24" fill="none"><path d="M15 7l5 5-5 5M20 12H9a5 5 0 0 0 0 10h1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
@@ -223,10 +236,12 @@
       <button class="btn ghost icon" data-action="download" title="Download JSON"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       <button class="btn ghost icon" data-action="import-click" title="Import JSON"><svg viewBox="0 0 24 24" fill="none"><path d="M12 21V9m0 0l-4 4m4-4l4 4M5 3h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       <input id="importFile" type="file" accept="application/json" style="display:none" />
+      <button class="btn ghost icon" data-action="toggle-theme" title="Toggle light / dark">◐</button>
       <div class="sep"></div>
       <span class="pill ok" id="valPill" data-action="goto-issues"><span class="dotpulse"></span><span id="valPillText">Valid</span></span>
     </div>
   </header>
+  <div class="rooms-bar" id="roomsBar"></div>
 
   <div class="workspace">
     <!-- STAGE -->
@@ -364,6 +379,10 @@
             <div class="h">Matrix crosspoints <span class="count" id="matrixHint"></span></div>
             <div class="b" style="overflow:auto" id="matrixWrap"></div>
           </div>
+          <div class="card">
+            <div class="h">Routing summary / Dante hub</div>
+            <div class="b" id="routingSummary"></div>
+          </div>
         </section>
 
         <!-- DSP -->
@@ -424,6 +443,8 @@ const DEVICE_STYLE = {
 
 let config = CAP.createConfig({ name:'Untitled', createdAt:new Date().toISOString() });
 let history = { stack:[config], idx:0 };
+let rooms = [{ id:'room-1', config, history, lastDeployed:null }];
+let activeRoom = 0;
 let activeTab = 'build';
 let zoneSeq = 1;
 const ED = { tool:'select', selection:null, drag:null, drawPts:[], hover:null, connectFrom:null, snap:0.25, highlight:new Set() };
@@ -470,7 +491,42 @@ const actions = {
   'goto-issues':()=>switchTab('issues'),
   'delete-selection':deleteSelection,
   'add-talker':addTalkerUI,
+  'auto-name':()=>{ setConfig(CAP.applyNamingScheme(config)); toast('Applied naming scheme','ok'); },
+  'deploy':deployRoom,
+  'toggle-theme':()=>{ document.body.classList.toggle('light'); redraw(); },
+  'add-room':addRoomUI,
 };
+// ---- rooms (multi-room project) ----
+function syncActiveRoom(){ rooms[activeRoom].config=config; rooms[activeRoom].history=history; }
+function loadRoom(i){ activeRoom=i; config=rooms[i].config; history=rooms[i].history; ED.selection=null; render(); }
+function switchRoom(i){ if(i===activeRoom) return; syncActiveRoom(); loadRoom(i); }
+function addRoomUI(){ syncActiveRoom(); let n=rooms.length+1; const ids=new Set(rooms.map(r=>r.id)); let k=n; while(ids.has(`room-${k}`)) k++;
+  const cfg=CAP.createConfig({name:`Room ${n}`,createdAt:new Date().toISOString()}); rooms.push({id:`room-${k}`,config:cfg,history:{stack:[cfg],idx:0},lastDeployed:null}); loadRoom(rooms.length-1); }
+function removeRoomUI(i){ if(rooms.length<=1) return toast('Keep at least one room'); rooms.splice(i,1); activeRoom = Math.min(activeRoom, rooms.length-1); loadRoom(activeRoom); }
+function renameRoomUI(i){ const name=prompt('Room name', rooms[i].config.metadata.name); if(!name) return; rooms[i].config={...rooms[i].config, metadata:{...rooms[i].config.metadata, name}}; if(i===activeRoom) config=rooms[i].config; render(); }
+function deployRoom(){
+  const room=rooms[activeRoom];
+  const base=room.lastDeployed||CAP.createConfig({name:'∅',createdAt:''});
+  const diff=CAP.deploymentDiff(base, config);
+  config=CAP.markDeployed(config, new Date().toISOString());
+  room.lastDeployed=config; setConfig(config);
+  if(diff.identical) return toast('Deployed — no changes since last deploy','ok');
+  const p=[]; if(diff.devicesAdded.length)p.push(`+${diff.devicesAdded.length} dev`); if(diff.devicesRemoved.length)p.push(`−${diff.devicesRemoved.length} dev`); if(diff.devicesChanged.length)p.push(`~${diff.devicesChanged.length} dev`); if(diff.routesAdded.length)p.push(`+${diff.routesAdded.length} route`); if(diff.routesRemoved.length)p.push(`−${diff.routesRemoved.length} route`);
+  toast('Deployed — '+p.join(', '),'ok');
+}
+function renderRoomsBar(){
+  rooms[activeRoom].config=config;
+  const bar=document.getElementById('roomsBar');
+  bar.innerHTML=rooms.map((r,i)=>`<div class="room-tab ${i===activeRoom?'active':''}" data-action="switch-room" data-i="${i}" title="double-click to rename"><span>${esc(r.config.metadata.name)}${r.config.deployment?.status==='deployed'?' ✓':''}</span>${rooms.length>1?`<span class="x" data-action="remove-room" data-i="${i}">✕</span>`:''}</div>`).join('')
+    +`<div class="room-tab add" data-action="add-room">+ Room</div>`;
+}
+function renderRoutingSummary(){
+  const el=document.getElementById('routingSummary'); if(!el) return;
+  const sum=CAP.routingSummary(config); const dante=CAP.danteSubscriptions(config);
+  let html=`<p class="hint">${sum.total} route(s) · <span style="color:var(--dante)">${sum.dante} Dante</span> · <span style="color:var(--analog)">${sum.analog} analog</span></p>`;
+  html+= dante.length ? '<div class="list">'+dante.map(s=>`<div class="item"><div class="meta"><b>${esc(s.fromDeviceLabel)} → ${esc(s.toDeviceLabel)}</b><small>${esc(s.fromPortLabel)} → ${esc(s.toPortLabel)}</small></div></div>`).join('')+'</div>' : '<div class="empty">No Dante subscriptions.</div>';
+  el.innerHTML=html;
+}
 
 document.addEventListener('click',(e)=>{
   const el = e.target.closest('[data-action]'); if(!el) return;
@@ -488,6 +544,8 @@ document.addEventListener('click',(e)=>{
     if(a==='focus-issue'){ return focusIssue(+el.dataset.idx); }
     if(a==='select-talker'){ ED.selection={kind:'talker',id:el.dataset.id}; switchTab('build'); return render(); }
     if(a==='remove-talker'){ e.stopPropagation(); return setConfig(CAP.removeTalker(config, el.dataset.id)); }
+    if(a==='switch-room'){ return switchRoom(+el.dataset.i); }
+    if(a==='remove-room'){ e.stopPropagation(); return removeRoomUI(+el.dataset.i); }
     if(a==='add-dsp-block'){ const kind=document.getElementById('dspKind').value; if(!kind) return; return setConfig(CAP.addDspBlock(config, el.dataset.id, CAP.createDspBlock(kind, nextDspId(el.dataset.id, kind)))); }
     if(a==='remove-dsp-block'){ return setConfig(CAP.removeDspBlock(config, el.dataset.id, el.dataset.block)); }
     if(a==='add-peq-band'){ const d=config.devices.find(x=>x.id===el.dataset.id); const b=d.dspBlocks.find(x=>x.id===el.dataset.block); if(b.params.bands.length<4) return setConfig(CAP.updateDspBlock(config, el.dataset.id, el.dataset.block, {params:{bands:[...b.params.bands, CAP.defaultPeqBand()]}})); return; }
@@ -681,7 +739,7 @@ function huddle(){
 
 /* ============================ render ============================ */
 function render(){
-  renderHeader(); renderSelection(); renderDevices(); renderCoverage(); renderPeople(); renderRouting(); renderAec(); renderAutomix(); renderDspBlocks(); renderMute();
+  renderHeader(); renderRoomsBar(); renderSelection(); renderDevices(); renderCoverage(); renderPeople(); renderRouting(); renderRoutingSummary(); renderAec(); renderAutomix(); renderDspBlocks(); renderMute();
   renderRoomControls(); renderValidation();
   document.getElementById('json').textContent = CAP.serialize(config,true);
   redraw();
@@ -1269,6 +1327,8 @@ function renderMute(){
     <button class="btn sm ghost" data-action="remove-mute-link" data-id="${l.id}">✕</button></div>`).join('') : '<div class="empty" style="margin-top:8px">No mute links.</div>';
   el.innerHTML=html;
 }
+
+document.getElementById('roomsBar').addEventListener('dblclick',(e)=>{ const tab=e.target.closest('.room-tab[data-i]'); if(tab) renameRoomUI(+tab.dataset.i); });
 
 /* ---- init ---- */
 devType.dispatchEvent(new Event('change'));

@@ -1,6 +1,6 @@
 {
   "name": "conferencing-audio-pipeline",
-  "version": "1.7.0",
+  "version": "1.8.0",
   "description": "Configuration, routing, and validation control plane for a networked-conferencing audio system (mic coverage zones, matrix mixer, AEC references, automixer). Not a real-time DSP engine.",
   "type": "module",
   "license": "MIT",

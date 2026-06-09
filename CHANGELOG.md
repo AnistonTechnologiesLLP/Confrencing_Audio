@@ -8,6 +8,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 The JSON **config schema** is versioned independently via `CONFIG_VERSION`
 (currently `1`); changes that affect persisted documents note it explicitly.
 
+## [1.8.0] - 2026-06-09
+
+Designer-inspired workflow features — all vendor-neutral, **configuration/
+validation only** (no real-time audio, Dante control, device discovery, firmware,
+or network I/O).
+
+### Added
+- **Projects (multi-room)** (`src/project/`): a `Project` holds several named
+  rooms (each a `SystemConfig`) plus an active-room pointer, with versioned,
+  round-trippable JSON (`createProject`, `addRoom`, `removeRoom`, `renameRoom`,
+  `setActiveRoom`, `updateRoom`, `getActiveRoom`, `serializeProject`,
+  `deserializeProject`). Per-room configs reuse the standard deserializer, so
+  v1→v2 migration applies on load.
+- **Deployment workflow** (`src/deployment/`): a config-only `deployment` state
+  (`design`/`online`/`deployed`) via `setDeploymentStatus` / `markDeployed`, and a
+  pure `deploymentDiff(base, target)` (devices/routes added/removed/changed).
+- **Naming conventions** (`src/naming/`): `applyNamingScheme`, `suggestedLabel`,
+  `labelCollisions`, plus `NAMING_DUPLICATE_LABEL` / `NAMING_EMPTY_LABEL`
+  validation warnings.
+- **Routing views** (`src/routing/`): `subscriptions`, `danteSubscriptions`,
+  `routingSummary`, `signalFlowReport` (the "enhanced routing / Dante hub" view).
+- **Device templates** (`src/devices/templates.ts`): `deviceTemplate` /
+  `instantiateTemplate` capture and stamp out a configured device (profile + DSP
+  chain), re-namespacing ids.
+- **UI**: a multi-room **rooms bar** (add/switch/rename/remove), a **Deploy**
+  button (marks deployed + toasts the diff), an **Auto-name** button, a **Routing
+  summary / Dante hub** panel in the Routing tab, and a **light/dark theme**
+  toggle. New tests bring the suite to 82.
+
+### Notes
+- `SystemConfig.deployment` is an additive optional field; configs without it
+  round-trip unchanged (no schema-version bump — still v2).
+
 ## [1.7.0] - 2026-06-09
 
 Vendor-neutral DSP and device-capability modeling — a Shure-Designer-inspired
