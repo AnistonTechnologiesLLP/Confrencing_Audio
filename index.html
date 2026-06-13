@@ -298,6 +298,11 @@
         <option value="">Load sample…</option>
         <option value="boardroom">Boardroom (reference AEC)</option>
         <option value="huddle">Huddle (auto-configured)</option>
+        <option value="meeting">Meeting room</option>
+        <option value="conference">Conference room (3 arrays)</option>
+        <option value="training">Training room / classroom</option>
+        <option value="lecture">Lecture hall / auditorium</option>
+        <option value="ushape">U-shape boardroom (polygon table)</option>
         <option value="empty">Empty config</option>
       </select>
       <button class="btn" data-action="auto-config" title="Apply sensible defaults (Alt+A)">
@@ -872,6 +877,22 @@ function loadScenario(which){
   if(which==='empty'){ setConfig(CAP.createConfig({name:'Untitled',createdAt:new Date().toISOString()})); ED.selection=null; return; }
   if(which==='boardroom'){ setConfig(boardroom()); toast('Loaded boardroom — try pointing PM at P-out-analog-1','info'); return; }
   if(which==='huddle'){ setConfig(CAP.autoConfigure(huddle())); toast('Loaded huddle (auto-configured)','ok'); return; }
+  if(which==='meeting'){ setConfig(meetingRoom()); toast('Loaded meeting room','ok'); return; }
+  if(which==='conference'){ setConfig(conferenceRoom()); toast('Loaded conference room (3 arrays)','ok'); return; }
+  if(which==='training'){ setConfig(trainingRoom()); toast('Loaded training room','ok'); return; }
+  if(which==='lecture'){ setConfig(lectureHall()); toast('Loaded lecture hall','ok'); return; }
+  if(which==='ushape'){ setConfig(uShapeBoardroom()); toast('Loaded U-shape boardroom','ok'); return; }
+}
+/** Route mics + far-end codec into the processor, feed speakers, far-end→speakers,
+ *  then auto-configure AEC refs / automixer. Mirrors the Python `_wire` helper. */
+function wire(c, micOutPorts, codecId, speakerIds){
+  let n=1;
+  for(const port of micOutPorts){ c=CAP.route(c, port, `P-in-dante-${n}`); n++; }
+  const farIn=`P-in-dante-${n}`;
+  c=CAP.route(c, `${codecId}-out-dante-1`, farIn);
+  for(const sid of speakerIds){ c=CAP.route(c, 'P-out-analog-1', `${sid}-in-analog-1`); }
+  c=CAP.matrixFor(c,'P').route(farIn, 'P-out-analog-1');
+  return CAP.autoConfigure(c);
 }
 function place(c,id,x,y){ return CAP.setDevicePosition(c,id,{x,y}); }
 function boardroom(){
@@ -910,6 +931,106 @@ function huddle(){
   c=CAP.route(c,'A1-out-mix','P-in-dante-1'); c=CAP.route(c,'C-out-dante-1','P-in-dante-2');
   c=CAP.route(c,'P-out-analog-1','L1-in-analog-1'); c=CAP.matrixFor(c,'P').route('P-in-dante-2','P-out-analog-1');
   return c;
+}
+function meetingRoom(){
+  let c=CAP.createConfig({name:'Meeting Room',createdAt:new Date().toISOString()});
+  c=CAP.setRoom(c, CAP.rectangularRoom(7,5,2.8));
+  c=CAP.addDevice(c,CAP.createProcessor('P','DSP'));
+  c=CAP.addDevice(c,CAP.createMicrophoneArray('A1','Ceiling Array','automatic'));
+  c=CAP.addDevice(c,CAP.createLoudspeaker('L1','Soundbar','analog'));
+  c=CAP.addDevice(c,CAP.createCodec('C','Room Codec','dante'));
+  c=place(c,'P',6,4.3); c=place(c,'A1',3.5,2.5); c=place(c,'L1',3.5,0.6); c=place(c,'C',6,1);
+  c=CAP.addCoverageZone(c,'A1',CAP.dynamicZone('A1-z1','Table',{kind:'rect',origin:{x:1.5,y:1.2},width:4,height:2.6}));
+  c=CAP.addTalker(c,CAP.createTalker('T1','Host',{x:2,y:2.5},1.2));
+  c=CAP.addTalker(c,CAP.createTalker('T2','Guest A',{x:3.5,y:1.6}));
+  c=CAP.addTalker(c,CAP.createTalker('T3','Guest B',{x:3.5,y:3.4}));
+  c=CAP.addTalker(c,CAP.createTalker('T4','Guest C',{x:5,y:2.5}));
+  return wire(c, ['A1-out-mix'], 'C', ['L1']);
+}
+function conferenceRoom(){
+  let c=CAP.createConfig({name:'Conference Room',createdAt:new Date().toISOString()});
+  c=CAP.setRoom(c, CAP.rectangularRoom(12,7,3));
+  c=CAP.addDevice(c,CAP.createProcessor('P','DSP'));
+  c=CAP.addDevice(c,CAP.createMicrophoneArray('A1','Ceiling Array 1','automatic'));
+  c=CAP.addDevice(c,CAP.createMicrophoneArray('A2','Ceiling Array 2','automatic'));
+  c=CAP.addDevice(c,CAP.createMicrophoneArray('A3','Ceiling Array 3','automatic'));
+  c=CAP.addDevice(c,CAP.createWirelessMic('PM','Presenter Mic','dante'));
+  c=CAP.addDevice(c,CAP.createLoudspeaker('L1','Speaker L','analog'));
+  c=CAP.addDevice(c,CAP.createLoudspeaker('L2','Speaker R','analog'));
+  c=CAP.addDevice(c,CAP.createCodec('C','Room Codec','dante'));
+  c=place(c,'P',11,6.2); c=place(c,'A1',3,3.5); c=place(c,'A2',6,3.5); c=place(c,'A3',9,3.5);
+  c=place(c,'PM',6,0.8); c=place(c,'L1',2,6.5); c=place(c,'L2',10,6.5); c=place(c,'C',11,1);
+  c=CAP.addCoverageZone(c,'A2',CAP.dynamicZone('A2-z1','Table',{kind:'rect',origin:{x:2,y:2},width:8,height:3}));
+  c=CAP.addCoverageZone(c,'A1',CAP.exclusionZone('A1-x1','Doorway',{kind:'rect',origin:{x:0.4,y:5},width:1.6,height:1.6}));
+  c=CAP.addTalker(c,CAP.createTalker('T1','Chair',{x:2.5,y:3.5},1.3));
+  c=CAP.addTalker(c,CAP.createTalker('T2','Attendee A',{x:4.5,y:2.4}));
+  c=CAP.addTalker(c,CAP.createTalker('T3','Attendee B',{x:4.5,y:4.6}));
+  c=CAP.addTalker(c,CAP.createTalker('T4','Attendee C',{x:7.5,y:2.4}));
+  c=CAP.addTalker(c,CAP.createTalker('T5','Attendee D',{x:7.5,y:4.6}));
+  c=CAP.addTalker(c,CAP.createTalker('T6','Presenter',{x:9.5,y:3.5},1.55));
+  return wire(c, ['A1-out-mix','A2-out-mix','A3-out-mix','PM-out-dante-1'], 'C', ['L1','L2']);
+}
+function trainingRoom(){
+  let c=CAP.createConfig({name:'Training Room',createdAt:new Date().toISOString()});
+  c=CAP.setRoom(c, CAP.rectangularRoom(10,8,3.2));
+  c=CAP.addDevice(c,CAP.createProcessor('P','DSP'));
+  c=CAP.addDevice(c,CAP.createMicrophoneArray('A1','Front Array','automatic'));
+  c=CAP.addDevice(c,CAP.createMicrophoneArray('A2','Rear Array','automatic'));
+  c=CAP.addDevice(c,CAP.createWirelessMic('LM','Lectern Mic','dante'));
+  c=CAP.addDevice(c,CAP.createLoudspeaker('L1','Speaker L','analog'));
+  c=CAP.addDevice(c,CAP.createLoudspeaker('L2','Speaker R','analog'));
+  c=CAP.addDevice(c,CAP.createCodec('C','Room Codec','dante'));
+  c=place(c,'P',9,7.2); c=place(c,'A1',5,2.5); c=place(c,'A2',5,6); c=place(c,'LM',1.5,1.5);
+  c=place(c,'L1',2,0.5); c=place(c,'L2',8,0.5); c=place(c,'C',9,1);
+  c=CAP.addCoverageZone(c,'A1',CAP.dedicatedZone('A1-z1','Lectern',{x:0.8,y:0.8}));
+  c=CAP.addCoverageZone(c,'A2',CAP.dynamicZone('A2-z1','Audience',{kind:'rect',origin:{x:2,y:3.5},width:6,height:4}));
+  c=CAP.addCoverageZone(c,'A1',CAP.exclusionZone('A1-x1','AV Closet',{kind:'rect',origin:{x:8.2,y:6.2},width:1.6,height:1.6}));
+  c=CAP.addTalker(c,CAP.createTalker('T1','Instructor',{x:1.5,y:1.4},1.6));
+  c=CAP.addTalker(c,CAP.createTalker('T2','Student 1',{x:3,y:4.5}));
+  c=CAP.addTalker(c,CAP.createTalker('T3','Student 2',{x:5,y:4.5}));
+  c=CAP.addTalker(c,CAP.createTalker('T4','Student 3',{x:3,y:6}));
+  c=CAP.addTalker(c,CAP.createTalker('T5','Student 4',{x:5,y:6}));
+  return wire(c, ['A1-out-mix','A2-out-mix','LM-out-dante-1'], 'C', ['L1','L2']);
+}
+function lectureHall(){
+  let c=CAP.createConfig({name:'Lecture Hall',createdAt:new Date().toISOString()});
+  c=CAP.setRoom(c, CAP.rectangularRoom(14,10,4.2));
+  c=CAP.addDevice(c,CAP.createProcessor('P','DSP'));
+  c=CAP.addDevice(c,CAP.createMicrophoneArray('A1','Stage Array','automatic'));
+  c=CAP.addDevice(c,CAP.createMicrophoneArray('A2','Audience Array L','automatic'));
+  c=CAP.addDevice(c,CAP.createMicrophoneArray('A3','Audience Array R','automatic'));
+  c=CAP.addDevice(c,CAP.createWirelessMic('PM','Presenter Mic','dante'));
+  c=CAP.addDevice(c,CAP.createLoudspeaker('L1','Line Array L','analog'));
+  c=CAP.addDevice(c,CAP.createLoudspeaker('L2','Line Array R','analog'));
+  c=CAP.addDevice(c,CAP.createCodec('C','Stream Codec','dante'));
+  c=place(c,'P',13,9); c=place(c,'A1',7,2); c=place(c,'A2',4.5,6.5); c=place(c,'A3',9.5,6.5);
+  c=place(c,'PM',7,1); c=place(c,'L1',3,0.6); c=place(c,'L2',11,0.6); c=place(c,'C',13,1);
+  c=CAP.addCoverageZone(c,'A1',CAP.dynamicZone('A1-z1','Stage',{kind:'rect',origin:{x:4,y:0.8},width:6,height:2.2}));
+  c=CAP.addCoverageZone(c,'A2',CAP.dynamicZone('A2-z1','Audience',{kind:'rect',origin:{x:1.5,y:4},width:11,height:5}));
+  c=CAP.addTalker(c,CAP.createTalker('T1','Presenter',{x:7,y:1.6},1.6));
+  c=CAP.addTalker(c,CAP.createTalker('T2','Q&A (left)',{x:4,y:6}));
+  c=CAP.addTalker(c,CAP.createTalker('T3','Q&A (right)',{x:10,y:6}));
+  c=CAP.addTalker(c,CAP.createTalker('T4','Audience',{x:7,y:8}));
+  return wire(c, ['A1-out-mix','A2-out-mix','A3-out-mix','PM-out-dante-1'], 'C', ['L1','L2']);
+}
+function uShapeBoardroom(){
+  let c=CAP.createConfig({name:'U-Shape Boardroom',createdAt:new Date().toISOString()});
+  c=CAP.setRoom(c, CAP.rectangularRoom(9,8,3));
+  c=CAP.addDevice(c,CAP.createProcessor('P','DSP'));
+  c=CAP.addDevice(c,CAP.createMicrophoneArray('A1','Ceiling Array 1','automatic'));
+  c=CAP.addDevice(c,CAP.createMicrophoneArray('A2','Ceiling Array 2','automatic'));
+  c=CAP.addDevice(c,CAP.createLoudspeaker('L1','Speaker L','analog'));
+  c=CAP.addDevice(c,CAP.createLoudspeaker('L2','Speaker R','analog'));
+  c=CAP.addDevice(c,CAP.createCodec('C','Room Codec','dante'));
+  c=place(c,'P',8,7); c=place(c,'A1',4.5,3); c=place(c,'A2',4.5,5.5); c=place(c,'L1',2,7.4); c=place(c,'L2',7,7.4); c=place(c,'C',8,1);
+  const uTable={kind:'polygon',points:[{x:2,y:2},{x:7,y:2},{x:7,y:6},{x:5.5,y:6},{x:5.5,y:3.5},{x:3.5,y:3.5},{x:3.5,y:6},{x:2,y:6}]};
+  c=CAP.addCoverageZone(c,'A1',CAP.dynamicZone('A1-z1','U-Table',uTable));
+  c=CAP.addTalker(c,CAP.createTalker('T1','Chair',{x:4.5,y:2.4},1.4));
+  c=CAP.addTalker(c,CAP.createTalker('T2','Member A',{x:2.7,y:3}));
+  c=CAP.addTalker(c,CAP.createTalker('T3','Member B',{x:2.7,y:5}));
+  c=CAP.addTalker(c,CAP.createTalker('T4','Member C',{x:6.3,y:3}));
+  c=CAP.addTalker(c,CAP.createTalker('T5','Member D',{x:6.3,y:5}));
+  return wire(c, ['A1-out-mix','A2-out-mix'], 'C', ['L1','L2']);
 }
 
 /* ============================ render ============================ */
