@@ -338,7 +338,7 @@ export function speakerCoverage(
  * downward cone when unzoned). Targets inside a beam sector and the floor
  * coverage circle are "picked up", with a coarse off-axis gain rolloff.
  */
-export function mic_coverage(
+export function micCoverage(
   config: SystemConfig,
   array: MicrophoneArray,
   targets: Target[],
@@ -441,7 +441,7 @@ export function simulateRoomCoverage(
 ): RoomCoverage {
   const targets = roomTargets(config);
   const occluders = roomOccluders(config);
-  const micFn = opts.micCoverageFn ?? mic_coverage;
+  const micFn = opts.micCoverageFn ?? micCoverage;
 
   const mics: MicCoverage[] = [];
   const cameras: CameraCoverage[] = [];
@@ -487,6 +487,3 @@ export function simulateRoomCoverage(
     },
   };
 }
-
-/** Alias matching the rest of the package's camelCase naming. */
-export const micCoverage = mic_coverage;

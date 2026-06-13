@@ -408,6 +408,7 @@
                     <option value="wiredMic">Wired mic</option>
                     <option value="loudspeaker">Loudspeaker</option>
                     <option value="codec">Codec (far-end)</option>
+                    <option value="camera">Camera (v4)</option>
                   </select>
                 </div>
                 <div class="f" id="devTransportWrap" style="flex:.8"><label class="fl">Transport</label>
@@ -435,6 +436,17 @@
               <p class="hint">Place the person speaking. Select a talker to see capture status and the steering angle from each array.</p>
               <button class="btn primary" data-action="add-talker" style="margin-bottom:11px">+ Add talker</button>
               <div class="list" id="talkerList"></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="h">Furniture &amp; coverage sim (v4)</div>
+            <div class="b">
+              <div class="row end" style="margin-bottom:9px">
+                <div class="f" style="flex:1.3"><label class="fl">Furniture</label><select class="in" id="furnKind"></select></div>
+                <button class="btn primary" data-action="add-furniture">+ Add</button>
+              </div>
+              <div class="list" id="furnList"></div>
+              <div id="coverageSim" style="margin-top:11px"></div>
             </div>
           </div>
         </section>
@@ -516,12 +528,15 @@ import * as CAP from './dist/index.js';
 
 /* ============================ state ============================ */
 const MIC_TYPES = new Set(['microphoneArray','wirelessMic','wiredMic']);
+// device types that carry no transport port (UI hides the transport picker)
+const NO_TRANSPORT = new Set(['processor','camera']);
 const DEFAULT_TRANSPORT = { wirelessMic:'dante', wiredMic:'analog', loudspeaker:'analog', codec:'dante', microphoneArray:'dante' };
-const ID_PREFIX = { processor:'P', microphoneArray:'A', wirelessMic:'WM', wiredMic:'WD', loudspeaker:'L', codec:'C' };
+const ID_PREFIX = { processor:'P', microphoneArray:'A', wirelessMic:'WM', wiredMic:'WD', loudspeaker:'L', codec:'C', camera:'CAM' };
 const DEVICE_STYLE = {
   processor:{color:'#9a6dff',shape:'square'}, microphoneArray:{color:'#6d8bff',shape:'circle'},
   wirelessMic:{color:'#3ddc97',shape:'circle'}, wiredMic:{color:'#2dd4bf',shape:'circle'},
   loudspeaker:{color:'#f7c948',shape:'triangle'}, codec:{color:'#94a3b8',shape:'diamond'},
+  camera:{color:'#ff8a5b',shape:'square'},
 };
 
 let config = CAP.createConfig({ name:'Untitled', createdAt:new Date().toISOString() });
@@ -581,6 +596,7 @@ const actions = {
   'export-report-md':()=>exportReport('markdown'),
   'capture-scene':captureSceneUI,
   'add-mute-group':addMuteGroupUI,
+  'add-furniture':addFurnitureUI,
   'deploy':deployRoom,
   'toggle-theme':()=>{ document.body.classList.toggle('light'); redraw(); },
   'add-room':addRoomUI,
@@ -659,6 +675,7 @@ document.addEventListener('click',(e)=>{
     if(a==='recall-scene'){ setConfig(CAP.recallScene(config, el.dataset.id)); return toast('Recalled scene','ok'); }
     if(a==='remove-scene'){ return setConfig(CAP.removeScene(config, el.dataset.id)); }
     if(a==='remove-mute-group'){ return setConfig(CAP.removeMuteGroup(config, el.dataset.id)); }
+    if(a==='remove-furniture'){ return setConfig(CAP.removeFurniture(config, el.dataset.id)); }
   }catch(err){ toast(err.message); }
 });
 function captureSceneUI(){
@@ -673,6 +690,31 @@ function addMuteGroupUI(){
   const label=prompt('Mute group name', 'Room mute'); if(!label) return;
   const n=(config.control?.muteGroups.length??0)+1; const ids=new Set((config.control?.muteGroups||[]).map(g=>g.id)); let k=n; while(ids.has(`mg-${k}`)) k++;
   setConfig(CAP.addMuteGroup(config, CAP.createMuteGroup(`mg-${k}`, label, {deviceIds:mics, trigger:'software'}))); toast('Added mute group','ok');
+}
+function addFurnitureUI(){
+  if(!config.room) return toast('Set a room first');
+  const kind=document.getElementById('furnKind').value||'table';
+  const b=boundsOf(config); const pos={x:snap((b.minX+b.maxX)/2), y:snap((b.minY+b.maxY)/2)};
+  const ids=new Set((config.room.objects||[]).map(o=>o.id)); let k=(config.room.objects?.length??0)+1; while(ids.has(`f-${k}`)) k++;
+  setConfig(CAP.addFurniture(config, `f-${k}`, kind, pos)); toast('Added '+kind,'ok');
+}
+function renderFurniture(){
+  const el=document.getElementById('furnList'); if(!el) return;
+  const objs=config.room?.objects||[];
+  el.innerHTML = objs.length ? objs.map(o=>`<div class="item"><div class="meta"><b>${esc(o.kind)}</b><small>${esc(o.id)} · (${o.position.x.toFixed(1)}, ${o.position.y.toFixed(1)}) m</small></div><button class="btn sm ghost" data-action="remove-furniture" data-id="${esc(o.id)}">✕</button></div>`).join('') : '<div class="empty">No furniture placed.</div>';
+}
+function renderCoverageSim(){
+  const el=document.getElementById('coverageSim'); if(!el) return;
+  const placed=config.devices.some(d=>(d.type==='camera'||d.type==='loudspeaker'||d.type==='microphoneArray')&&d.position);
+  const hasTargets=config.talkers.length>0 || (config.room?.objects||[]).some(o=>(o.seats||[]).length>0);
+  if(!placed||!hasTargets){ el.innerHTML='<p class="hint">Place arrays/cameras/speakers and add talkers (or furniture seats) to simulate coverage.</p>'; return; }
+  const rc=CAP.simulateRoomCoverage(config); const s=rc.summary;
+  let html=`<p class="hint"><b>${s.micCovered}/${s.targetCount}</b> targets mic-covered (${s.micCoveragePct.toFixed(0)}%)`;
+  if(s.hasCamera) html+=` · cameras frame <b>${s.cameraFramedPct.toFixed(0)}%</b>`;
+  html+='</p>';
+  if(s.micGaps.length){ const lbl=new Map(rc.targets.map(t=>[t.id,t.label])); html+=`<p class="hint" style="color:#e0a046">Mic gaps: ${s.micGaps.map(g=>esc(lbl.get(g)||g)).join(', ')}</p>`; }
+  html+=`<p class="hint" style="color:var(--faint);font-size:11px">${esc(rc.caveats[0])}</p>`;
+  el.innerHTML=html;
 }
 function exportReport(fmt){
   const text=CAP.designReport(config, fmt);
@@ -692,7 +734,7 @@ function addMuteLink(){
 document.addEventListener('change',(e)=>{
   const el=e.target;
   try{
-    if(el.id==='devType'){ const t=el.value; devTransportWrap.style.visibility = t==='processor'?'hidden':'visible'; devTransport.value=DEFAULT_TRANSPORT[t]??'dante'; return; }
+    if(el.id==='devType'){ const t=el.value; devTransportWrap.style.visibility = NO_TRANSPORT.has(t)?'hidden':'visible'; devTransport.value=DEFAULT_TRANSPORT[t]??'dante'; return; }
     if(el.id==='snapSel'){ ED.snap=+el.value; return; }
     if(el.id==='scenario'){ const v=el.value; el.value=''; return loadScenario(v); }
     if(el.dataset.action==='set-aec-enabled'||el.dataset.action==='set-aec-ref'){
@@ -718,6 +760,8 @@ document.addEventListener('change',(e)=>{
       return setConfig(CAP.updateDspBlock(config, el.dataset.id, el.dataset.block, {params:{bands}}));
     }
     if(el.dataset.action==='mute-toggle'){ return setConfig({...config, muteLinks: config.muteLinks.map(l=>l.id===el.dataset.id?{...l, muted: el.checked}:l)}); }
+    if(el.dataset.action==='aim-bearing'){ const v=+el.value; if(Number.isFinite(v)){ const d=config.devices.find(x=>x.id===el.dataset.id); return setConfig(d?.type==='camera'?CAP.setCameraBearing(config,el.dataset.id,v):CAP.setSpeakerBearing(config,el.dataset.id,v)); } return; }
+    if(el.dataset.action==='aim-tilt'){ const v=+el.value; if(Number.isFinite(v)){ const d=config.devices.find(x=>x.id===el.dataset.id); return setConfig(d?.type==='camera'?CAP.setCameraTilt(config,el.dataset.id,v):CAP.setSpeakerTilt(config,el.dataset.id,v)); } return; }
     if(el.dataset.action==='set-zone-channel'){ const v=el.value; return setConfig(CAP.setZoneOutputChannel(config, el.dataset.array, el.dataset.zone, v===''?undefined:+v)); }
     if(el.dataset.action==='set-zone-gain'){ const v=el.value; return setConfig(CAP.setZoneGainDb(config, el.dataset.array, el.dataset.zone, v===''?undefined:+v)); }
     if(el.dataset.action==='mute-group-toggle'){ return setConfig(CAP.setMuteGroupMuted(config, el.dataset.id, el.checked)); }
@@ -741,6 +785,7 @@ function addDevice(){
   else if(type==='wirelessMic') device=CAP.createWirelessMic(id,label,transport);
   else if(type==='wiredMic') device=CAP.createWiredMic(id,label,transport);
   else if(type==='loudspeaker') device=CAP.createLoudspeaker(id,label,transport);
+  else if(type==='camera') device=CAP.createCamera(id,label);
   else device=CAP.createCodec(id,label,transport);
   let next=CAP.addDevice(config, device);
   next=CAP.setDevicePosition(next, id, defaultPlacement(next));
@@ -869,7 +914,7 @@ function huddle(){
 
 /* ============================ render ============================ */
 function render(){
-  renderHeader(); renderRoomsBar(); renderSelection(); renderDevices(); renderCoverage(); renderPeople(); renderRouting(); renderRoutingSummary(); renderControlPanel(); renderAec(); renderAutomix(); renderDspBlocks(); renderMute();
+  renderHeader(); renderRoomsBar(); renderSelection(); renderDevices(); renderCoverage(); renderPeople(); renderFurniture(); renderCoverageSim(); renderRouting(); renderRoutingSummary(); renderControlPanel(); renderAec(); renderAutomix(); renderDspBlocks(); renderMute();
   renderRoomControls(); renderValidation();
   document.getElementById('json').textContent = CAP.serialize(config,true);
   redraw();
@@ -898,6 +943,10 @@ function renderSelection(){
         <label class="fl" style="margin-top:9px">Capability profile</label>
         <select class="in" data-action="set-profile" data-id="${d.id}">${profileOptions(d)}</select>
         <div class="ahint" style="margin-top:5px">${capabilityHint(d)}</div>
+        ${(d.type==='camera'||d.type==='loudspeaker')?`<div class="row" style="margin-top:9px">
+          <div class="f"><label class="fl">Aim bearing °</label><input class="in" type="number" step="5" data-action="aim-bearing" data-id="${d.id}" value="${d.bearingDeg ?? ''}" placeholder="${d.type==='loudspeaker'?'omni':'0'}"/></div>
+          <div class="f"><label class="fl">Down-tilt °</label><input class="in" type="number" step="5" data-action="aim-tilt" data-id="${d.id}" value="${d.tiltDeg ?? 0}"/></div>
+        </div>`:''}
         <div class="row" style="margin-top:10px">
           ${pos?`<button class="btn sm ghost" data-action="unplace" data-id="${d.id}">Unplace</button>`:''}
           <div class="grow"></div>
@@ -1471,6 +1520,7 @@ function renderMute(){
 document.getElementById('roomsBar').addEventListener('dblclick',(e)=>{ const tab=e.target.closest('.room-tab[data-i]'); if(tab) renameRoomUI(+tab.dataset.i); });
 
 /* ---- init ---- */
+{ const fk=document.getElementById('furnKind'); if(fk) fk.innerHTML=CAP.FURNITURE_KINDS.map(k=>`<option value="${k}">${esc(CAP.FURNITURE_CATALOG[k]?.label||k)}</option>`).join(''); }
 devType.dispatchEvent(new Event('change'));
 render();
 requestAnimationFrame(redraw);
