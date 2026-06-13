@@ -181,6 +181,11 @@ A single pure, deterministic `validate(config) → { ok, errors, warnings }`.
 | `CONTROL_MUTE_GROUP_INVALID` | error | A mute group references a missing device/area, or is empty. |
 | `SCENE_INVALID` | error | A scene is empty, duplicates an id, or references a missing group/array/area. |
 | `SCHEDULE_INVALID` | error | A scene schedule has a bad time/day, duplicate id, or recalls a missing scene. |
+| `FURNITURE_GEOMETRY_INVALID` | error | A furniture object has non-positive width/depth. |
+| `FURNITURE_OUTSIDE_ROOM` | warning | A furniture object is placed outside the room outline. |
+| `DEVICE_INSIDE_FURNITURE` | warning | A device sits inside a furniture object's footprint, below its top. |
+| `CAMERA_UNPLACED` | warning | A conferencing camera has no position in the room. |
+| `CAMERA_NO_SUBJECT` | warning | A placed camera's field of view frames no talker or seat. |
 
 `ok` is `true` iff there are **no errors** (warnings are allowed).
 
@@ -314,7 +319,7 @@ the AEC trap/fix is in [`demo.mjs`](demo.mjs) (`npm run demo`, after `npm run bu
 
 ```bash
 npm install
-npm test          # vitest run — 295 tests
+npm test          # vitest run — 332 tests
 npm run typecheck # tsc --noEmit (strict)
 npm run build     # emit ESM + .d.ts to dist/
 ```
@@ -434,6 +439,33 @@ const holder = new ConfigHolder(config);
 const srv = new ControlApiServer(() => holder.get(), (t) => holder.apply(t));
 await srv.start();   // GET /api/status · GET /api/scenes
                      // POST /api/scenes/<id>/recall · POST /api/mute-groups/<id> {"muted": true}
+```
+
+## Cameras, furniture & coverage simulation (1.16.0)
+
+Schema **v4** adds room-design coverage modeling (still vendor-neutral, offline,
+zero-dependency; v1–v3 documents migrate losslessly):
+
+- **Conferencing cameras** — a `camera` device type (`createCamera` / `addCamera`)
+  with a pose (`bearingDeg` / `tiltDeg`) and a `CameraSpec` (FOV / range) on its
+  profile. Aim with `setCameraBearing` / `setCameraTilt`; loudspeakers gain
+  optional aim too (`setSpeakerBearing` / `setSpeakerTilt`, with a `SpeakerSpec`
+  dispersion cone).
+- **Furniture** — `RoomObject` gains real geometry (`width`/`depth`/`height`/
+  `rotationDeg`), `seats` (`SeatAnchor`s — implied camera/mic targets), acoustic
+  `absorption`, and occlusion flags. A catalog (`FURNITURE_CATALOG`) supplies
+  per-kind defaults. Build/edit with `addFurniture`, `setFurniturePosition` /
+  `…Rotation` / `…Dimensions`, `setSeatAnchors`, `removeFurniture`.
+- **Room coverage simulation** — `simulateRoomCoverage(config)` returns, per placed
+  device, a mic's steered-pickup beams, a camera's field-of-view (with
+  **height-aware furniture occlusion** — a ceiling camera sees over a low table; a
+  soundbar camera is blocked by a screen), and a loudspeaker's dispersion, plus an
+  aggregate coverage / framed-percentage summary and the honest geometric caveats.
+- **Validation** — `CAMERA_UNPLACED`, `CAMERA_NO_SUBJECT`, `FURNITURE_OUTSIDE_ROOM`,
+  `FURNITURE_GEOMETRY_INVALID`, `DEVICE_INSIDE_FURNITURE`.
+
+```ts
+import { createCamera, addCamera, setCameraBearing, addFurniture, simulateRoomCoverage } from 'conferencing-audio-pipeline';
 ```
 
 ## Changelog

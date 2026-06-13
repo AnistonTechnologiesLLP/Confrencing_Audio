@@ -6,7 +6,48 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 The JSON **config schema** is versioned independently via `CONFIG_VERSION`
-(currently `3`); changes that affect persisted documents note it explicitly.
+(currently `4`); changes that affect persisted documents note it explicitly.
+
+## [1.16.0] - 2026-06-13
+
+Conferencing cameras, device aim, furniture geometry, and a geometric room
+coverage simulator — matching the Python engine's v4. All additive and
+**zero runtime dependency**.
+
+### Added
+- **Conferencing cameras** — a new `camera` device type (`ConferencingCamera`
+  with `bearingDeg`/`tiltDeg`), `createCamera`, `addCamera`, and three camera
+  profiles (`generic-ptz-camera`, `generic-wide-camera`, `generic-soundbar-camera`)
+  carrying a `CameraSpec` (FOV/range) on their capabilities. Coverage-only —
+  routing/scene presets are deferred.
+- **Device aim** — `setCameraBearing` / `setCameraTilt` and optional loudspeaker
+  aim (`setSpeakerBearing` / `setSpeakerTilt`); a `SpeakerSpec` (dispersion/range)
+  on the loudspeaker profile.
+- **Furniture geometry** (`src/furniture/`) — `RoomObject` gains optional
+  `width`/`depth`/`height`/`rotationDeg`/`seats`/`absorption`/`blocksCamera`/
+  `blocksAudio` and a `SeatAnchor` type. A catalog (`FURNITURE_CATALOG`,
+  `FURNITURE_KINDS`) supplies per-kind defaults; resolvers (`resolvedDimensions`,
+  `furnitureCorners`, …) combine overrides with the catalog. API: `addFurniture`,
+  `removeFurniture`, `setFurniturePosition/Rotation/Dimensions`, `setSeatAnchors`.
+- **Room coverage simulation** (`src/coverage-sim/`) — `simulateRoomCoverage`
+  returns per-device mic pickup beams, camera field-of-view (with **height-aware**
+  furniture occlusion via `cameraSees`), and loudspeaker dispersion, plus an
+  aggregate `RoomCoverage` (covered %, framed %, gaps). Geometric / spec-based;
+  the mic tier is pluggable.
+- **Geometry helpers** — `bearingToDeg`, `angularSeparationDeg`, `pointInSector`,
+  `obbCorners` (shared by the validator and the simulator).
+- **Validation** — `CAMERA_UNPLACED`, `CAMERA_NO_SUBJECT`, `FURNITURE_OUTSIDE_ROOM`,
+  `FURNITURE_GEOMETRY_INVALID`, `DEVICE_INSIDE_FURNITURE`.
+- **Browser configurator** — camera device type + camera/loudspeaker aim controls,
+  a furniture add/list panel, and a live coverage-sim summary.
+
+### Changed
+- **`CONFIG_VERSION` 3 → 4.** `deserialize` accepts v1–v4 and migrates losslessly
+  (`v1 → v2 → v3 → v4`, a pure bump for v4); camera pose is normalized on load.
+  A v3 config that uses none of the new fields round-trips byte-for-byte.
+- `coverageAngleDeg` now lives on the device-capability profile (arrays);
+  `coverage/check.ts` reads it from there.
+- Suite grows to **332** tests.
 
 ## [1.15.0] - 2026-06-13
 
