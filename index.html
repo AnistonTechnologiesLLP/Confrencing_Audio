@@ -303,7 +303,10 @@
       <button class="btn" data-action="auto-config" title="Apply sensible defaults (Alt+A)">
         <svg viewBox="0 0 24 24" fill="none"><path d="M12 2v3m0 14v3M2 12h3m14 0h3M5 5l2 2m10 10l2 2M19 5l-2 2M7 17l-2 2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Auto-configure</button>
       <button class="btn ghost" data-action="auto-name" title="Apply naming scheme">Auto-name</button>
+      <button class="btn ghost" data-action="auto-route" title="One-click optimize routing (AEC refs, automix, far-end, mute link)">Auto-Route</button>
+      <button class="btn ghost" data-action="optimize-room" title="Place arrays, channel coverage areas, and route — one click">Optimize</button>
       <button class="btn ghost" data-action="deploy" title="Mark deployed &amp; show what changed">Deploy</button>
+      <button class="btn ghost" data-action="export-report" title="Export a shareable design report (HTML)">Report</button>
       <div class="sep"></div>
       <button class="btn icon" id="btnUndo" data-action="undo" title="Undo (Ctrl+Z)"><svg viewBox="0 0 24 24" fill="none"><path d="M9 7L4 12l5 5M4 12h11a5 5 0 0 1 0 10h-1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       <button class="btn icon" id="btnRedo" data-action="redo" title="Redo (Ctrl+Y)"><svg viewBox="0 0 24 24" fill="none"><path d="M15 7l5 5-5 5M20 12H9a5 5 0 0 0 0 10h1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
@@ -459,6 +462,10 @@
             <div class="h">Routing summary / Dante hub</div>
             <div class="b" id="routingSummary"></div>
           </div>
+          <div class="card">
+            <div class="h">Scenes &amp; mute groups</div>
+            <div class="b" id="controlPanel"></div>
+          </div>
         </section>
 
         <!-- DSP -->
@@ -568,6 +575,12 @@ const actions = {
   'delete-selection':deleteSelection,
   'add-talker':addTalkerUI,
   'auto-name':()=>{ setConfig(CAP.applyNamingScheme(config)); toast('Applied naming scheme','ok'); },
+  'auto-route':()=>{ const r=CAP.autoRoute(config); setConfig(r.config); toast(r.changes[0]||'Routed','ok'); },
+  'optimize-room':()=>{ const r=CAP.optimizeRoom(config); setConfig(r.config); toast('Optimize room — '+r.changes.length+' change(s)','ok'); },
+  'export-report':()=>exportReport('html'),
+  'export-report-md':()=>exportReport('markdown'),
+  'capture-scene':captureSceneUI,
+  'add-mute-group':addMuteGroupUI,
   'deploy':deployRoom,
   'toggle-theme':()=>{ document.body.classList.toggle('light'); redraw(); },
   'add-room':addRoomUI,
@@ -603,6 +616,21 @@ function renderRoutingSummary(){
   html+= dante.length ? '<div class="list">'+dante.map(s=>`<div class="item"><div class="meta"><b>${esc(s.fromDeviceLabel)} → ${esc(s.toDeviceLabel)}</b><small>${esc(s.fromPortLabel)} → ${esc(s.toPortLabel)}</small></div></div>`).join('')+'</div>' : '<div class="empty">No Dante subscriptions.</div>';
   el.innerHTML=html;
 }
+function renderControlPanel(){
+  const el=document.getElementById('controlPanel'); if(!el) return;
+  const ctrl=config.control; const groups=ctrl?.muteGroups||[]; const scenes=ctrl?.scenes||[];
+  const groupRows = groups.length ? '<div class="list">'+groups.map(g=>{
+    const members=[...g.deviceIds, ...g.zoneRefs.map(r=>`${r.arrayId}/${r.zoneId}`)];
+    return `<div class="item"><label class="sw"><input type="checkbox" data-action="mute-group-toggle" data-id="${g.id}" ${g.muted?'checked':''}/> <span>mute</span></label>
+      <div class="meta"><b>${esc(g.label)}</b><small>${g.trigger} · ${members.length} member(s)</small></div>
+      <button class="btn sm ghost" data-action="remove-mute-group" data-id="${g.id}">✕</button></div>`;
+  }).join('')+'</div>' : '<div class="empty">No mute groups.</div>';
+  const sceneRows = scenes.length ? '<div class="list">'+scenes.map(s=>`<div class="item"><div class="meta"><b>${esc(s.label)}</b><small>${Object.keys(s.muteStates).length} mute · ${s.zoneStates.length} area · ${s.steer.length} steer</small></div>
+      <button class="btn sm" data-action="recall-scene" data-id="${s.id}">Recall</button>
+      <button class="btn sm ghost" data-action="remove-scene" data-id="${s.id}">✕</button></div>`).join('')+'</div>' : '<div class="empty">No scenes captured.</div>';
+  el.innerHTML=`<div class="row" style="margin-bottom:8px"><b style="font-size:12px">Mute groups</b><div class="grow"></div><button class="btn sm" data-action="add-mute-group">+ Group</button></div>${groupRows}
+    <div class="row" style="margin:13px 0 8px"><b style="font-size:12px">Scenes</b><div class="grow"></div><button class="btn sm" data-action="capture-scene">Capture</button></div>${sceneRows}`;
+}
 
 document.addEventListener('click',(e)=>{
   const el = e.target.closest('[data-action]'); if(!el) return;
@@ -628,8 +656,31 @@ document.addEventListener('click',(e)=>{
     if(a==='remove-peq-band'){ const d=config.devices.find(x=>x.id===el.dataset.id); const b=d.dspBlocks.find(x=>x.id===el.dataset.block); const bands=b.params.bands.filter((_,i)=>i!==+el.dataset.band); return setConfig(CAP.updateDspBlock(config, el.dataset.id, el.dataset.block, {params:{bands}})); }
     if(a==='add-mute-link'){ return addMuteLink(); }
     if(a==='remove-mute-link'){ return setConfig({...config, muteLinks: config.muteLinks.filter(l=>l.id!==el.dataset.id)}); }
+    if(a==='recall-scene'){ setConfig(CAP.recallScene(config, el.dataset.id)); return toast('Recalled scene','ok'); }
+    if(a==='remove-scene'){ return setConfig(CAP.removeScene(config, el.dataset.id)); }
+    if(a==='remove-mute-group'){ return setConfig(CAP.removeMuteGroup(config, el.dataset.id)); }
   }catch(err){ toast(err.message); }
 });
+function captureSceneUI(){
+  const n=(config.control?.scenes.length??0)+1;
+  const label=prompt('Scene name', `Scene ${n}`); if(!label) return;
+  let id=`sc-${n}`; const ids=new Set((config.control?.scenes||[]).map(s=>s.id)); let k=n; while(ids.has(`sc-${k}`)) k++; id=`sc-${k}`;
+  setConfig(CAP.addScene(config, CAP.captureScene(config, id, label))); toast('Captured scene','ok');
+}
+function addMuteGroupUI(){
+  const mics=config.devices.filter(d=>MIC_TYPES.has(d.type)).map(d=>d.id);
+  if(!mics.length) return toast('Add a microphone first');
+  const label=prompt('Mute group name', 'Room mute'); if(!label) return;
+  const n=(config.control?.muteGroups.length??0)+1; const ids=new Set((config.control?.muteGroups||[]).map(g=>g.id)); let k=n; while(ids.has(`mg-${k}`)) k++;
+  setConfig(CAP.addMuteGroup(config, CAP.createMuteGroup(`mg-${k}`, label, {deviceIds:mics, trigger:'software'}))); toast('Added mute group','ok');
+}
+function exportReport(fmt){
+  const text=CAP.designReport(config, fmt);
+  const ext=fmt==='html'?'html':'md'; const mime=fmt==='html'?'text/html':'text/markdown';
+  const blob=new Blob([text],{type:mime}); const url=URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url; a.download=`${(config.metadata.name||'design').replace(/\s+/g,'_')}-report.${ext}`;
+  a.click(); URL.revokeObjectURL(url); toast('Report exported','ok');
+}
 function addMuteLink(){
   const proc=primaryProc(); if(!proc) return;
   const bus=config.automixer.outputBusId || (proc.matrix.outputBuses[0] && proc.matrix.outputBuses[0].id) || '';
@@ -667,6 +718,9 @@ document.addEventListener('change',(e)=>{
       return setConfig(CAP.updateDspBlock(config, el.dataset.id, el.dataset.block, {params:{bands}}));
     }
     if(el.dataset.action==='mute-toggle'){ return setConfig({...config, muteLinks: config.muteLinks.map(l=>l.id===el.dataset.id?{...l, muted: el.checked}:l)}); }
+    if(el.dataset.action==='set-zone-channel'){ const v=el.value; return setConfig(CAP.setZoneOutputChannel(config, el.dataset.array, el.dataset.zone, v===''?undefined:+v)); }
+    if(el.dataset.action==='set-zone-gain'){ const v=el.value; return setConfig(CAP.setZoneGainDb(config, el.dataset.array, el.dataset.zone, v===''?undefined:+v)); }
+    if(el.dataset.action==='mute-group-toggle'){ return setConfig(CAP.setMuteGroupMuted(config, el.dataset.id, el.checked)); }
     if(el.dataset.action==='nlp'){ return setConfig(CAP.configureAutomixer(config, config.automixer.processorId, CAP.setNlp(config.automixer, el.value))); }
     if(el.dataset.action==='ch-alwayson'||el.dataset.action==='ch-gate'){ return commitChannel(el.dataset.bus); }
   }catch(err){ toast(err.message); }
@@ -815,7 +869,7 @@ function huddle(){
 
 /* ============================ render ============================ */
 function render(){
-  renderHeader(); renderRoomsBar(); renderSelection(); renderDevices(); renderCoverage(); renderPeople(); renderRouting(); renderRoutingSummary(); renderAec(); renderAutomix(); renderDspBlocks(); renderMute();
+  renderHeader(); renderRoomsBar(); renderSelection(); renderDevices(); renderCoverage(); renderPeople(); renderRouting(); renderRoutingSummary(); renderControlPanel(); renderAec(); renderAutomix(); renderDspBlocks(); renderMute();
   renderRoomControls(); renderValidation();
   document.getElementById('json').textContent = CAP.serialize(config,true);
   redraw();
@@ -878,9 +932,19 @@ function renderSelection(){
   } else if(s.kind==='zone'){
     const arr=config.devices.find(x=>x.id===s.arrayId); const z=arr?.zones.find(z=>z.id===s.zoneId); if(!z){ card.innerHTML=''; return; }
     const g=z.shape.kind==='rect'?`${z.shape.width}×${z.shape.height} m @ (${z.shape.origin.x}, ${z.shape.origin.y})`:'polygon';
+    const chanGain = z.type!=='exclusion' ? `
+      <div class="row" style="margin-top:11px">
+        <div class="f"><label class="fl">Output channel</label>
+          <select class="in" data-action="set-zone-channel" data-array="${arr.id}" data-zone="${z.id}">
+            <option value="">— mixed</option>${[1,2,3,4,5,6,7,8].map(n=>`<option value="${n}" ${z.outputChannel===n?'selected':''}>Ch ${n}</option>`).join('')}
+          </select></div>
+        <div class="f"><label class="fl">Area gain (dB)</label>
+          <input class="in" type="number" step="0.5" min="-60" max="12" data-action="set-zone-gain" data-array="${arr.id}" data-zone="${z.id}" value="${z.gainDb??''}" placeholder="0"/></div>
+      </div>` : '';
     card.innerHTML=`<div class="card" style="border-color:var(--accent)">
       <div class="h">Selected zone · ${z.type} <span class="count">${arr.label}</span></div>
       <div class="b"><b>${esc(z.label)}</b><div style="color:var(--muted);font-size:12px;margin-top:3px">${g}</div>
+      ${chanGain}
       <div class="row" style="margin-top:10px"><div class="grow"></div><button class="btn sm" data-action="delete-selection">Delete <span class="kbd">Del</span></button></div></div></div>`;
   } else if(s.kind==='route'){
     const r=config.routes.find(r=>r.id===s.id); if(!r){ card.innerHTML=''; return; }

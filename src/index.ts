@@ -140,16 +140,11 @@ export {
 export * from './scenes/scenes.js';
 // --- commissioning: device-transport seam (simulated) ---
 export * from './transport/transport.js';
-// --- scene scheduler + local HTTP control API + project file manager ---
-export { SceneScheduler, type SchedulerClock } from './scheduler/scheduler.js';
-export { ControlApiServer, ConfigHolder } from './control-api/server.js';
-export {
-  ProjectFileManager,
-  defaultStateDir,
-  RECENT_MAX,
-  type OpenResult,
-  type RecoveryInfo,
-} from './files/files.js';
+// --- scene scheduler (pure; cross-platform timer) ---
+export { SceneScheduler, nextFire, type SchedulerClock } from './scheduler/scheduler.js';
+// NOTE: the Node-only HTTP control API and project file manager are NOT exported
+// here (they import `node:http` / `node:fs`, which would break browser bundles).
+// Import them from the `conferencing-audio-pipeline/node` subpath entry instead.
 // --- host-side array beamformer DESIGN layer (pure-stdlib, vendor-neutral) ---
 export * as beamformer from './beamformer/index.js';
 
@@ -676,7 +671,14 @@ export function autoConfigure(config: SystemConfig): SystemConfig {
     }
   }
 
-  const [refBus, automixBus] = pickUnusedDanteOutputBuses(next, processor, 2);
+  // Reuse already-assigned reference / automix buses so re-running is idempotent
+  // (a fresh design has neither, so first-run behavior is unchanged).
+  const existingRef =
+    mics.map((m) => (m.aec.enabled ? m.aec.referenceBusId : null)).find((b): b is string => !!b) ?? null;
+  const existingAutomix = config.automixer.outputBusId;
+  const picks = pickUnusedDanteOutputBuses(next, processor, 2);
+  const refBus = existingRef ?? picks[0];
+  const automixBus = existingAutomix ?? picks.find((b) => b !== refBus);
 
   // 1) Build the far-end-only reference bus (only if a far-end exists).
   if (refBus && farEndInputBuses.size > 0) {

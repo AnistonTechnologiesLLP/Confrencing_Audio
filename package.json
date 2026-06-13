@@ -1,7 +1,7 @@
 {
   "name": "conferencing-audio-pipeline",
-  "version": "1.8.0",
-  "description": "Configuration, routing, and validation control plane for a networked-conferencing audio system (mic coverage zones, matrix mixer, AEC references, automixer). Not a real-time DSP engine.",
+  "version": "1.15.0",
+  "description": "Configuration, routing, and validation control plane for a networked-conferencing audio system (mic coverage zones, matrix mixer, AEC references, automixer, scenes, commissioning) plus an offline host-side array-beamformer design layer. Not a real-time DSP engine.",
   "type": "module",
   "license": "MIT",
   "engines": {
@@ -14,6 +14,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./node": {
+      "types": "./dist/node.d.ts",
+      "import": "./dist/node.js"
     }
   },
   "files": [

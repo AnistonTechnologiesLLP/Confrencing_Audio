@@ -57,6 +57,15 @@ export function deserialize(json: string): SystemConfig {
   // Migration chain: each step is lossless and bumps one version.
   if (obj.version === 1) migrateV1ToV2(obj);
   if (obj.version === 2) migrateV2ToV3(obj);
+  // Normalize the control surface: its arrays are additive optional fields, so a
+  // hand-edited or partial v3 document may omit them — default them to []
+  // (mirrors the Python dataclass defaults in `_control`).
+  if (obj.control !== null && typeof obj.control === 'object') {
+    const c = obj.control as Record<string, unknown>;
+    if (!Array.isArray(c.muteGroups)) c.muteGroups = [];
+    if (!Array.isArray(c.scenes)) c.scenes = [];
+    if (!Array.isArray(c.schedules)) c.schedules = [];
+  }
   return parsed as SystemConfig;
 }
 
