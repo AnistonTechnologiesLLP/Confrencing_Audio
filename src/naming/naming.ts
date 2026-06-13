@@ -14,6 +14,7 @@ export const TYPE_LABEL: Record<DeviceType, string> = {
   wiredMic: 'Wired Mic',
   loudspeaker: 'Loudspeaker',
   codec: 'Codec',
+  camera: 'Camera',
 };
 
 /**

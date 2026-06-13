@@ -16,8 +16,10 @@ import { findDevice } from './model/config.js';
 import type { Talker } from './model/talker.js';
 import { DEFAULT_TALKER_ELEVATION_M } from './model/talker.js';
 import { steeringAngles, type SteeringAngles, type Point3D } from './geometry/angles.js';
-import type { Device, MicDevice, Processor } from './model/devices.js';
+import type { Device, MicDevice, Processor, ConferencingCamera } from './model/devices.js';
 import { isMicDevice, isProcessor, defaultElevation } from './model/devices.js';
+import type { RoomObject, SeatAnchor } from './model/room.js';
+import { furnitureType } from './furniture/furniture.js';
 import type { DspBlockConfig } from './model/dsp-blocks.js';
 import type { CoverageMode, CoverageZone } from './model/coverage.js';
 import type {
@@ -74,6 +76,8 @@ export {
   type DeviceProfile,
   type DeviceCapabilities,
   type ProfilePortDefaults,
+  type CameraSpec,
+  type SpeakerSpec,
 } from './profiles/profiles.js';
 export { createDspBlock, dspBlockParamIssues, defaultPeqBand } from './dsp/blocks.js';
 export { steeringAngles } from './geometry/angles.js';
@@ -120,6 +124,9 @@ export {
 } from './project/project.js';
 // --- 1.10.0+: coverage check, design report, placement simulation ---
 export * from './coverage/check.js';
+// --- v4: furniture catalog + room/device coverage simulation (cameras/mics/speakers) ---
+export * from './furniture/furniture.js';
+export * from './coverage-sim/coverage-sim.js';
 export { designReport } from './report/report.js';
 export {
   scorePlacement,
@@ -1028,4 +1035,157 @@ export function optimizeRoom(
     changes.push('Nothing to optimize — room already placed, channelled, and routed.');
   }
   return ar !== undefined ? { config: next, changes, autoRoute: ar } : { config: next, changes };
+}
+
+// ---------------------------------------------------------------------------
+// Conferencing cameras + device aim (v4)
+// ---------------------------------------------------------------------------
+
+/** Add a conferencing camera (coverage-only). Returns a new config. Throws on duplicate id. */
+export function addCamera(config: SystemConfig, camera: ConferencingCamera): SystemConfig {
+  return addDevice(config, camera);
+}
+
+/** Wrap a compass bearing into `[0, 360)`. */
+function wrapBearing(deg: number): number {
+  return ((deg % 360) + 360) % 360;
+}
+
+/** Apply an aim change to a camera or loudspeaker (throws for any other device). */
+function setAim(
+  config: SystemConfig,
+  deviceId: string,
+  changes: { bearingDeg?: number; tiltDeg?: number },
+): SystemConfig {
+  return mapDevice(config, deviceId, (d) => {
+    if (d.type !== 'camera' && d.type !== 'loudspeaker') {
+      throw new Error(`Device ${deviceId} is not a camera or loudspeaker (no aim).`);
+    }
+    return { ...d, ...changes };
+  });
+}
+
+/** Aim a camera: set its compass bearing (0° = +Y). Returns a new config. */
+export function setCameraBearing(config: SystemConfig, deviceId: string, bearingDeg: number): SystemConfig {
+  return setAim(config, deviceId, { bearingDeg: wrapBearing(bearingDeg) });
+}
+
+/** Set a camera's downward tilt from horizontal (degrees). Returns a new config. */
+export function setCameraTilt(config: SystemConfig, deviceId: string, tiltDeg: number): SystemConfig {
+  return setAim(config, deviceId, { tiltDeg });
+}
+
+/** Aim a loudspeaker: set its compass bearing (0° = +Y). Returns a new config. */
+export function setSpeakerBearing(config: SystemConfig, deviceId: string, bearingDeg: number): SystemConfig {
+  return setAim(config, deviceId, { bearingDeg: wrapBearing(bearingDeg) });
+}
+
+/** Set a loudspeaker's downward tilt from horizontal (degrees). Returns a new config. */
+export function setSpeakerTilt(config: SystemConfig, deviceId: string, tiltDeg: number): SystemConfig {
+  return setAim(config, deviceId, { tiltDeg });
+}
+
+// ---------------------------------------------------------------------------
+// Furniture / room objects (v4)
+// ---------------------------------------------------------------------------
+
+function mapRoomObjects(
+  config: SystemConfig,
+  fn: (objects: RoomObject[]) => RoomObject[],
+): SystemConfig {
+  if (!config.room) throw new Error('No room to place furniture in — set a room first.');
+  return { ...config, room: { ...config.room, objects: fn([...config.room.objects]) } };
+}
+
+function mapRoomObject(
+  config: SystemConfig,
+  objectId: string,
+  fn: (o: RoomObject) => RoomObject,
+): SystemConfig {
+  return mapRoomObjects(config, (objs) => {
+    let found = false;
+    const out = objs.map((o) => {
+      if (o.id !== objectId) return o;
+      found = true;
+      return fn(o);
+    });
+    if (!found) throw new Error(`Unknown room object: ${objectId}`);
+    return out;
+  });
+}
+
+/**
+ * Place a piece of furniture, defaulting its size from the catalog for `kind`.
+ * Occlusion/absorption stay catalog-resolved (left unset) so catalog tuning
+ * improves existing designs; geometry the user can edit is persisted explicitly.
+ * Returns a new config. Throws on duplicate object id or when there is no room.
+ */
+export function addFurniture(
+  config: SystemConfig,
+  objectId: string,
+  kind: string,
+  position: Point2D,
+  opts: { rotationDeg?: number; width?: number; depth?: number; height?: number; seats?: SeatAnchor[] } = {},
+): SystemConfig {
+  const ft = furnitureType(kind);
+  const w = opts.width ?? ft?.width;
+  const d = opts.depth ?? ft?.depth;
+  const h = opts.height ?? ft?.height;
+  const seatCapacity = ft && ft.seatCapacity ? ft.seatCapacity : undefined;
+  const obj: RoomObject = {
+    id: objectId,
+    kind,
+    position,
+    ...(w !== undefined ? { width: w } : {}),
+    ...(d !== undefined ? { depth: d } : {}),
+    ...(h !== undefined ? { height: h } : {}),
+    ...(opts.rotationDeg !== undefined ? { rotationDeg: opts.rotationDeg } : {}),
+    ...(seatCapacity !== undefined ? { seatCapacity } : {}),
+    ...(opts.seats && opts.seats.length > 0 ? { seats: [...opts.seats] } : {}),
+  };
+  return mapRoomObjects(config, (objs) => {
+    if (objs.some((o) => o.id === objectId)) throw new Error(`Duplicate room-object id: ${objectId}`);
+    return [...objs, obj];
+  });
+}
+
+/** Remove a furniture object by id. Returns a new config. */
+export function removeFurniture(config: SystemConfig, objectId: string): SystemConfig {
+  return mapRoomObjects(config, (objs) => objs.filter((o) => o.id !== objectId));
+}
+
+/** Move a furniture object. Returns a new config. */
+export function setFurniturePosition(config: SystemConfig, objectId: string, position: Point2D): SystemConfig {
+  return mapRoomObject(config, objectId, (o) => ({ ...o, position }));
+}
+
+/** Set a furniture object's clockwise yaw (degrees). Returns a new config. */
+export function setFurnitureRotation(config: SystemConfig, objectId: string, rotationDeg: number): SystemConfig {
+  return mapRoomObject(config, objectId, (o) => ({ ...o, rotationDeg: wrapBearing(rotationDeg) }));
+}
+
+/** Override a furniture object's explicit dimensions (only the provided ones). Returns a new config. */
+export function setFurnitureDimensions(
+  config: SystemConfig,
+  objectId: string,
+  dims: { width?: number; depth?: number; height?: number },
+): SystemConfig {
+  return mapRoomObject(config, objectId, (o) => ({
+    ...o,
+    ...(dims.width !== undefined ? { width: dims.width } : {}),
+    ...(dims.depth !== undefined ? { depth: dims.depth } : {}),
+    ...(dims.height !== undefined ? { height: dims.height } : {}),
+  }));
+}
+
+/** Set (or clear with `undefined`/empty) a furniture object's seat anchors. Returns a new config. */
+export function setSeatAnchors(
+  config: SystemConfig,
+  objectId: string,
+  seats: SeatAnchor[] | undefined,
+): SystemConfig {
+  return mapRoomObject(config, objectId, (o) => {
+    const { seats: _omit, ...rest } = o;
+    return seats && seats.length > 0 ? { ...rest, seats: [...seats] } : { ...rest };
+  });
 }

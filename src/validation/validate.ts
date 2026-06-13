@@ -10,6 +10,9 @@ import {
 } from '../model/coverage.js';
 import { findDevice } from '../model/config.js';
 import { parseHhmm, WEEKDAYS } from '../model/control.js';
+import { defaultElevation } from '../model/devices.js';
+import { pointInPolygon, pointInSector } from '../model/geometry.js';
+import { resolvedDimensions, furnitureCorners } from '../furniture/furniture.js';
 import {
   GATING_SENSITIVITY_MIN,
   GATING_SENSITIVITY_MAX,
@@ -50,6 +53,7 @@ export function validate(config: SystemConfig): ValidationResult {
   validateProfilesAndBlocks(config, add);
   validateCommissioning(config, add);
   validateControl(config, add);
+  validateRoomAndDevices(config, add);
 
   const errors = issues.filter((i) => i.severity === 'error');
   const warnings = issues.filter((i) => i.severity === 'warning');
@@ -414,6 +418,65 @@ function validateControl(config: SystemConfig, add: AddIssue): void {
       if (!(WEEKDAYS as readonly string[]).includes(day)) {
         add('error', 'SCHEDULE_INVALID', `Schedule "${sched.id}" has unknown day "${day}" (expected one of ${WEEKDAYS.join(', ')}).`, [sched.id]);
       }
+    }
+  }
+}
+
+/**
+ * v4 coverage-design checks: furniture geometry/placement, devices embedded in
+ * furniture, and cameras that frame nobody. All advisory (warnings) except a
+ * degenerate furniture footprint, which is an error.
+ */
+function validateRoomAndDevices(config: SystemConfig, add: AddIssue): void {
+  const room = config.room;
+
+  if (room) {
+    const verts = room.vertices;
+    const hasOutline = verts.length >= 3;
+    for (const o of room.objects) {
+      const [w, d] = resolvedDimensions(o);
+      if (w <= 0 || d <= 0) {
+        add('error', 'FURNITURE_GEOMETRY_INVALID', `Furniture "${o.id}" (${o.kind}) has non-positive dimensions (${w}×${d} m).`, [o.id]);
+      }
+      if (hasOutline && !pointInPolygon(o.position, verts)) {
+        add('warning', 'FURNITURE_OUTSIDE_ROOM', `Furniture "${o.id}" (${o.kind}) is outside the room outline.`, [o.id]);
+      }
+    }
+    // devices physically embedded in furniture (below its top, inside its footprint)
+    for (const dev of config.devices) {
+      const pos = dev.position;
+      if (!pos) continue;
+      const elev = dev.elevation ?? defaultElevation(dev, room.height);
+      for (const o of room.objects) {
+        const [, , oh] = resolvedDimensions(o);
+        if (elev < oh && pointInPolygon(pos, furnitureCorners(o))) {
+          add('warning', 'DEVICE_INSIDE_FURNITURE', `Device "${dev.id}" sits inside furniture "${o.id}" (${o.kind}).`, [dev.id, o.id]);
+          break;
+        }
+      }
+    }
+  }
+
+  // cameras: unplaced, or framing no subject
+  const subjects = config.talkers.map((t) => t.position);
+  if (room) {
+    for (const o of room.objects) {
+      for (const s of o.seats ?? []) subjects.push(s.position);
+    }
+  }
+  for (const dev of config.devices) {
+    if (dev.type !== 'camera') continue;
+    if (!dev.position) {
+      add('warning', 'CAMERA_UNPLACED', `Camera "${dev.id}" is not placed in the room.`, [dev.id]);
+      continue;
+    }
+    const spec = deviceCapabilities(dev).camera;
+    if (!spec || subjects.length === 0) continue;
+    const half = spec.fovHDeg / 2;
+    const bearing = ((dev.bearingDeg % 360) + 360) % 360;
+    const framesAny = subjects.some((s) => pointInSector(dev.position!, s, bearing, half, spec.maxRangeM));
+    if (!framesAny) {
+      add('warning', 'CAMERA_NO_SUBJECT', `Camera "${dev.id}" frames no talker or seat — aim it or move it.`, [dev.id]);
     }
   }
 }

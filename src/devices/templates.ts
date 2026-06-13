@@ -13,6 +13,7 @@ import {
   createWiredMic,
   createLoudspeaker,
   createCodec,
+  createCamera,
 } from './factories.js';
 import { createMicrophoneArray } from '../coverage/coverage.js';
 
@@ -62,6 +63,9 @@ export function instantiateTemplate(template: DeviceTemplate, id: string, label:
       break;
     case 'codec':
       device = createCodec(id, label, transport);
+      break;
+    case 'camera':
+      device = createCamera(id, label);
       break;
   }
   const dspBlocks = template.dspBlocks.map((b, i) => ({

@@ -5,6 +5,7 @@ import type {
   WirelessMic,
   Loudspeaker,
   Codec,
+  ConferencingCamera,
 } from '../model/devices.js';
 import { createMatrix } from '../matrix/matrix.js';
 import { defaultProfileId } from '../profiles/profiles.js';
@@ -149,5 +150,26 @@ export function createCodec(id: string, label: string, transport: Transport = 'd
     ports: [makePort(id, 'output', transport, 1), makePort(id, 'input', transport, 1)],
     profileId: defaultProfileId('codec'),
     dspBlocks: [],
+  };
+}
+
+/**
+ * Create a conferencing camera (v4, coverage-only). No audio ports — routing is
+ * deferred, so it never participates in auto-route. Pose starts level/north.
+ */
+export function createCamera(
+  id: string,
+  label: string,
+  profileId = 'generic-ptz-camera',
+): ConferencingCamera {
+  return {
+    id,
+    type: 'camera',
+    label,
+    ports: [],
+    profileId,
+    dspBlocks: [],
+    bearingDeg: 0,
+    tiltDeg: 0,
   };
 }

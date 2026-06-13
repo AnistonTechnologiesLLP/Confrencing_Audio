@@ -70,7 +70,18 @@ export type ValidationCode =
   /** A scene is empty, duplicates an id, or references a missing group/array/area. */
   | 'SCENE_INVALID'
   /** A scene schedule has a bad time/day, duplicates an id, or recalls a missing scene. */
-  | 'SCHEDULE_INVALID';
+  | 'SCHEDULE_INVALID'
+  // --- room coverage design: cameras & furniture (v4) ---
+  /** A conferencing camera has no position in the room (warning). */
+  | 'CAMERA_UNPLACED'
+  /** A placed camera's field of view frames no talker or seat (warning). */
+  | 'CAMERA_NO_SUBJECT'
+  /** A furniture object is placed outside the room outline (warning). */
+  | 'FURNITURE_OUTSIDE_ROOM'
+  /** A furniture object has non-positive width/depth. */
+  | 'FURNITURE_GEOMETRY_INVALID'
+  /** A device sits inside a furniture object's footprint, below its top (warning). */
+  | 'DEVICE_INSIDE_FURNITURE';
 
 /** Human-readable, one-line descriptions keyed by code (used in the README/catalog). */
 export const CODE_DESCRIPTIONS: Record<ValidationCode, string> = {
@@ -107,6 +118,11 @@ export const CODE_DESCRIPTIONS: Record<ValidationCode, string> = {
     "A scene is empty, duplicates another scene's id, or references a missing mute group, array, or coverage area.",
   SCHEDULE_INVALID:
     "A scene schedule has a bad time/day, duplicates another schedule's id, or recalls a missing scene.",
+  CAMERA_UNPLACED: 'A conferencing camera has no position in the room.',
+  CAMERA_NO_SUBJECT: "A placed camera's field of view frames no talker or seat.",
+  FURNITURE_OUTSIDE_ROOM: 'A furniture object is placed outside the room outline.',
+  FURNITURE_GEOMETRY_INVALID: 'A furniture object has non-positive width/depth.',
+  DEVICE_INSIDE_FURNITURE: "A device sits inside a furniture object's footprint, below its top.",
 };
 
 /** A single validation finding with references to the offending entities. */

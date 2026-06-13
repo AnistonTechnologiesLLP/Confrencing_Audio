@@ -41,9 +41,9 @@ export function deserialize(json: string): SystemConfig {
   if (typeof obj.version !== 'number') {
     throw new DeserializeError('Missing numeric "version".');
   }
-  if (obj.version !== 1 && obj.version !== 2 && obj.version !== CONFIG_VERSION) {
+  if (obj.version !== 1 && obj.version !== 2 && obj.version !== 3 && obj.version !== CONFIG_VERSION) {
     throw new DeserializeError(
-      `Unsupported config version ${obj.version}; expected 1, 2 or ${CONFIG_VERSION}.`,
+      `Unsupported config version ${obj.version}; expected 1, 2, 3 or ${CONFIG_VERSION}.`,
     );
   }
   for (const field of ['devices', 'routes', 'matrix', 'automixer', 'muteLinks', 'metadata']) {
@@ -57,6 +57,7 @@ export function deserialize(json: string): SystemConfig {
   // Migration chain: each step is lossless and bumps one version.
   if (obj.version === 1) migrateV1ToV2(obj);
   if (obj.version === 2) migrateV2ToV3(obj);
+  if (obj.version === 3) migrateV3ToV4(obj);
   // Normalize the control surface: its arrays are additive optional fields, so a
   // hand-edited or partial v3 document may omit them — default them to []
   // (mirrors the Python dataclass defaults in `_control`).
@@ -65,6 +66,16 @@ export function deserialize(json: string): SystemConfig {
     if (!Array.isArray(c.muteGroups)) c.muteGroups = [];
     if (!Array.isArray(c.scenes)) c.scenes = [];
     if (!Array.isArray(c.schedules)) c.schedules = [];
+  }
+  // Normalize camera pose: a hand-edited camera may omit bearing/tilt; the model
+  // requires them (the factory defaults both to 0), so default them here too.
+  if (Array.isArray(obj.devices)) {
+    for (const d of obj.devices as Array<Record<string, unknown>>) {
+      if (d.type === 'camera') {
+        if (typeof d.bearingDeg !== 'number') d.bearingDeg = 0;
+        if (typeof d.tiltDeg !== 'number') d.tiltDeg = 0;
+      }
+    }
   }
   return parsed as SystemConfig;
 }
@@ -96,5 +107,15 @@ function migrateV2ToV3(obj: Record<string, unknown>): void {
     if (!Array.isArray(c.scenes)) c.scenes = [];
     if (!Array.isArray(c.schedules)) c.schedules = [];
   }
+  obj.version = 3;
+}
+
+/**
+ * In-place migration of a v3 document to v4. v4 adds conferencing cameras,
+ * loudspeaker aim, and furniture geometry on `room.objects` — all optional,
+ * omit-when-absent fields — so a v3 file gains nothing it didn't have. Pure
+ * version bump; existing devices/objects reconstruct identically.
+ */
+function migrateV3ToV4(obj: Record<string, unknown>): void {
   obj.version = CONFIG_VERSION;
 }

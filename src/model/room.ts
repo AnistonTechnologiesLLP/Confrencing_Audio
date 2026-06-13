@@ -40,11 +40,48 @@ export interface RoomBackground {
   opacity: number;
 }
 
-/** An opaque object placed in the room (table, podium, etc.). */
+/**
+ * A sit/stand position implied by a piece of furniture (a chair/sofa seat), v4.
+ * Seats let the coverage simulator treat "where people sit" as camera/mic targets
+ * without separate talkers.
+ */
+export interface SeatAnchor {
+  /** Floor point, metres. */
+  position: Point2D;
+  /** Optional compass bearing the occupant faces (0° = +Y). */
+  facingDeg?: number;
+}
+
+/**
+ * A furniture item / obstacle in the room. The first fields are the original v1
+ * shape (kept so legacy configs round-trip byte-identically); everything after is
+ * optional furniture geometry (v4): real dimensions, yaw, seats, an acoustic
+ * absorption coefficient, and occlusion flags. Unset overrides fall back to the
+ * furniture catalog defaults for `kind`; `blocksCamera` defaults to `true` and
+ * `blocksAudio` to `false` when unset.
+ */
 export interface RoomObject {
   id: string;
   kind: string;
   position: Point2D;
   /** Free-form metadata; not interpreted by the pipeline. */
   meta?: Record<string, string | number | boolean>;
+  /** Width along local +X (before rotation), metres. */
+  width?: number;
+  /** Depth along local +Y, metres. */
+  depth?: number;
+  /** Height, metres. */
+  height?: number;
+  /** Clockwise yaw, degrees (0° = +Y). */
+  rotationDeg?: number;
+  /** Nominal seating capacity. */
+  seatCapacity?: number;
+  /** Explicit seat anchors (camera/mic targets). */
+  seats?: SeatAnchor[];
+  /** Sabine absorption coefficient, 0..1. */
+  absorption?: number;
+  /** Opaque to a camera's line of sight (`undefined` ⇒ catalog default, treated as `true`). */
+  blocksCamera?: boolean;
+  /** Tall/solid enough to shadow sound (`undefined` ⇒ catalog default, treated as `false`). */
+  blocksAudio?: boolean;
 }

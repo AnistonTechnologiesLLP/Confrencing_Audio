@@ -12,7 +12,8 @@ export type DeviceType =
   | 'wirelessMic'
   | 'wiredMic'
   | 'loudspeaker'
-  | 'codec';
+  | 'codec'
+  | 'camera';
 
 /** Fields common to every device. */
 export interface BaseDevice {
@@ -72,6 +73,28 @@ export interface WiredMic extends BaseDevice {
 /** Output sink for local sound reinforcement. */
 export interface Loudspeaker extends BaseDevice {
   type: 'loudspeaker';
+  /**
+   * v4 — optional aim, so a directional dispersion cone can be drawn/simulated.
+   * `undefined` ⇒ treated as omnidirectional. Compass bearing the speaker faces
+   * (0° = +Y).
+   */
+  bearingDeg?: number;
+  /** v4 — downward tilt from horizontal, degrees (0 = level). */
+  tiltDeg?: number;
+}
+
+/**
+ * A conferencing camera (PTZ / wide / soundbar-integrated), v4. Coverage-only:
+ * it carries a pose (`bearingDeg`/`tiltDeg`) and a nominal (usually empty) port
+ * set, while its field-of-view / range live on the device **profile**
+ * ({@link DeviceProfile} → `CameraSpec`). Routing / scene presets are deferred.
+ */
+export interface ConferencingCamera extends BaseDevice {
+  type: 'camera';
+  /** Compass bearing the camera faces (0° = +Y, clockwise). */
+  bearingDeg: number;
+  /** Downward tilt from horizontal, degrees (0 = level, 90 = straight down). */
+  tiltDeg: number;
 }
 
 /**
@@ -102,7 +125,8 @@ export type Device =
   | WiredMic
   | Loudspeaker
   | Codec
-  | Processor;
+  | Processor
+  | ConferencingCamera;
 
 /** Devices that own an {@link AecConfig} (i.e. microphone-type sources). */
 export type MicDevice = MicrophoneArray | WirelessMic | WiredMic;
@@ -121,6 +145,11 @@ export function isProcessor(device: Device): device is Processor {
   return device.type === 'processor';
 }
 
+/** Type guard: device is a conferencing camera (v4). */
+export function isCamera(device: Device): device is ConferencingCamera {
+  return device.type === 'camera';
+}
+
 /**
  * Default elevation (metres above floor) used for 3D display and geometry when a
  * device has no explicit {@link BaseDevice.elevation}. Ceiling devices sit near
@@ -133,6 +162,8 @@ export function defaultElevation(device: Device, roomHeight = 3): number {
       return roomHeight; // ceiling-mounted array
     case 'loudspeaker':
       return Math.max(0, roomHeight - 0.3); // near-ceiling
+    case 'camera':
+      return Math.max(0, roomHeight - 1.2); // eye-line (typical wall/display mount)
     case 'codec':
       return 0.7;
     case 'processor':

@@ -8,6 +8,26 @@
 import type { DeviceType } from '../model/devices.js';
 import type { DspBlockKind } from '../model/dsp-blocks.js';
 
+/**
+ * Field-of-view / reach for a conferencing camera (v4). Lives on the device
+ * profile, mirroring how a mic array's `coverageAngleDeg` lives here.
+ */
+export interface CameraSpec {
+  fovHDeg: number;
+  fovVDeg: number;
+  maxRangeM: number;
+  /** Tightest framing a PTZ can reach, if zoomable. */
+  zoomMinFovDeg?: number;
+}
+
+/** Dispersion / reach for a loudspeaker (v4). */
+export interface SpeakerSpec {
+  dispersionHDeg: number;
+  dispersionVDeg: number;
+  maxRangeM: number;
+  spl1mDb?: number;
+}
+
 /** Capabilities a profile grants a device. */
 export interface DeviceCapabilities {
   aec: boolean;
@@ -16,6 +36,12 @@ export interface DeviceCapabilities {
   supportedBlocks: DspBlockKind[];
   /** Max coverage zones (microphone arrays); 0 for non-arrays. */
   maxCoverageZones: number;
+  /** Full (unsteered) pickup cone for arrays, degrees; `undefined` = no coverage geometry (v4). */
+  coverageAngleDeg?: number;
+  /** Camera FOV/range (camera profiles only) (v4). */
+  camera?: CameraSpec;
+  /** Loudspeaker dispersion/range (loudspeaker profiles) (v4). */
+  speaker?: SpeakerSpec;
 }
 
 /** Default port counts a profile suggests (informational; factories keep stable ids). */
@@ -55,14 +81,14 @@ export const DEVICE_PROFILES: Record<string, DeviceProfile> = {
     id: 'generic-ceiling-array',
     label: 'Generic ceiling array',
     appliesTo: ['microphoneArray'],
-    capabilities: { aec: true, automix: true, mute: true, supportedBlocks: MIC_BLOCKS, maxCoverageZones: 8 },
+    capabilities: { aec: true, automix: true, mute: true, supportedBlocks: MIC_BLOCKS, maxCoverageZones: 8, coverageAngleDeg: 120 },
     portDefaults: { danteOutputs: 1 },
   },
   'generic-table-array': {
     id: 'generic-table-array',
     label: 'Generic table array',
     appliesTo: ['microphoneArray'],
-    capabilities: { aec: true, automix: true, mute: true, supportedBlocks: MIC_BLOCKS, maxCoverageZones: 8 },
+    capabilities: { aec: true, automix: true, mute: true, supportedBlocks: MIC_BLOCKS, maxCoverageZones: 8, coverageAngleDeg: 130 },
     portDefaults: { danteOutputs: 1 },
   },
   'generic-wireless-mic': {
@@ -97,7 +123,14 @@ export const DEVICE_PROFILES: Record<string, DeviceProfile> = {
     id: 'generic-loudspeaker',
     label: 'Generic loudspeaker',
     appliesTo: ['loudspeaker'],
-    capabilities: { aec: false, automix: false, mute: true, supportedBlocks: SPK_BLOCKS, maxCoverageZones: 0 },
+    capabilities: {
+      aec: false,
+      automix: false,
+      mute: true,
+      supportedBlocks: SPK_BLOCKS,
+      maxCoverageZones: 0,
+      speaker: { dispersionHDeg: 90, dispersionVDeg: 60, maxRangeM: 8, spl1mDb: 90 },
+    },
     portDefaults: { analogInputs: 1 },
   },
   'generic-codec': {
@@ -112,6 +145,49 @@ export const DEVICE_PROFILES: Record<string, DeviceProfile> = {
     label: 'Generic mute/logic control',
     appliesTo: ['codec', 'processor'],
     capabilities: { aec: false, automix: false, mute: true, supportedBlocks: ['mute'], maxCoverageZones: 0 },
+    portDefaults: {},
+  },
+  // v4 — conferencing cameras (coverage-only; no DSP, no audio routing required).
+  'generic-ptz-camera': {
+    id: 'generic-ptz-camera',
+    label: 'Generic PTZ camera',
+    appliesTo: ['camera'],
+    capabilities: {
+      aec: false,
+      automix: false,
+      mute: false,
+      supportedBlocks: [],
+      maxCoverageZones: 0,
+      camera: { fovHDeg: 70, fovVDeg: 40, maxRangeM: 10, zoomMinFovDeg: 6 },
+    },
+    portDefaults: {},
+  },
+  'generic-wide-camera': {
+    id: 'generic-wide-camera',
+    label: 'Generic wide-angle camera',
+    appliesTo: ['camera'],
+    capabilities: {
+      aec: false,
+      automix: false,
+      mute: false,
+      supportedBlocks: [],
+      maxCoverageZones: 0,
+      camera: { fovHDeg: 120, fovVDeg: 70, maxRangeM: 6 },
+    },
+    portDefaults: {},
+  },
+  'generic-soundbar-camera': {
+    id: 'generic-soundbar-camera',
+    label: 'Generic soundbar camera',
+    appliesTo: ['camera'],
+    capabilities: {
+      aec: false,
+      automix: false,
+      mute: false,
+      supportedBlocks: [],
+      maxCoverageZones: 0,
+      camera: { fovHDeg: 110, fovVDeg: 60, maxRangeM: 5 },
+    },
     portDefaults: {},
   },
 };
@@ -131,6 +207,8 @@ export function defaultProfileId(type: DeviceType): string {
       return 'generic-loudspeaker';
     case 'codec':
       return 'generic-codec';
+    case 'camera':
+      return 'generic-ptz-camera';
     default:
       return 'generic-hardware-dsp';
   }

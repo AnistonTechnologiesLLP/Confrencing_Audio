@@ -15,7 +15,7 @@ import type { SystemConfig } from '../model/config.js';
 import { type CoverageZone, isPickupZone } from '../model/coverage.js';
 import { type Point2D, type ZoneShape, pointInShape } from '../model/geometry.js';
 import { DEFAULT_TALKER_ELEVATION_M } from '../model/talker.js';
-import { getDeviceProfile } from '../profiles/profiles.js';
+import { deviceCapabilities } from '../profiles/profiles.js';
 
 /** A floor coverage circle: its centre and radius (metres). */
 export interface ArrayCoverageCircle {
@@ -29,18 +29,11 @@ const RAD_PER_DEG = Math.PI / 180;
 
 /**
  * Full pickup-cone angle (degrees) a profile grants an array, or `undefined`
- * when the profile defines no coverage geometry. Mirrors the Python profile
- * `coverage_angle_deg` capability (arrays only).
+ * when the profile defines no coverage geometry (the `coverageAngleDeg`
+ * capability, arrays only).
  */
-const PROFILE_COVERAGE_ANGLE_DEG: Record<string, number> = {
-  'generic-ceiling-array': 120.0,
-  'generic-table-array': 130.0,
-};
-
 function coverageAngleDeg(device: Device): number | undefined {
-  const profile = getDeviceProfile(device.profileId);
-  if (profile === undefined) return undefined;
-  return PROFILE_COVERAGE_ANGLE_DEG[profile.id];
+  return deviceCapabilities(device).coverageAngleDeg;
 }
 
 /**
