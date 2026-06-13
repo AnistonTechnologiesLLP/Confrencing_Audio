@@ -771,6 +771,7 @@ document.addEventListener('change',(e)=>{
     if(el.dataset.action==='set-zone-gain'){ const v=el.value; return setConfig(CAP.setZoneGainDb(config, el.dataset.array, el.dataset.zone, v===''?undefined:+v)); }
     if(el.dataset.action==='mute-group-toggle'){ return setConfig(CAP.setMuteGroupMuted(config, el.dataset.id, el.checked)); }
     if(el.dataset.action==='furn-rotate'){ const v=+el.value; if(Number.isFinite(v)) return setConfig(CAP.setFurnitureRotation(config, el.dataset.id, v)); return; }
+    if(el.dataset.action==='furn-dim'){ const v=+el.value; if(Number.isFinite(v)&&v>0) return setConfig(CAP.setFurnitureDimensions(config, el.dataset.id, {[el.dataset.dim]: v})); return; }
     if(el.dataset.action==='furn-x'||el.dataset.action==='furn-y'){ const o=config.room?.objects.find(x=>x.id===el.dataset.id); if(!o) return; const nx=el.dataset.action==='furn-x'?+el.value:o.position.x; const ny=el.dataset.action==='furn-y'?+el.value:o.position.y; if(Number.isFinite(nx)&&Number.isFinite(ny)) return setConfig(CAP.setFurniturePosition(config, el.dataset.id, {x:nx,y:ny})); return; }
     if(el.dataset.action==='nlp'){ return setConfig(CAP.configureAutomixer(config, config.automixer.processorId, CAP.setNlp(config.automixer, el.value))); }
     if(el.dataset.action==='ch-alwayson'||el.dataset.action==='ch-gate'){ return commitChannel(el.dataset.bus); }
@@ -1135,7 +1136,12 @@ function renderSelection(){
           <div class="f"><label class="fl">Y (m)</label><input class="in" type="number" step="0.1" data-action="furn-y" data-id="${o.id}" value="${o.position.y}"/></div>
           <div class="f"><label class="fl">Rotation °</label><input class="in" type="number" step="15" data-action="furn-rotate" data-id="${o.id}" value="${o.rotationDeg??0}"/></div>
         </div>
-        <div class="ahint" style="margin-top:6px">${dims[0].toFixed(2)} × ${dims[1].toFixed(2)} × ${dims[2].toFixed(2)} m${(o.seats?.length)?` · ${o.seats.length} seat(s)`:''}</div>
+        <div class="row" style="margin-top:9px">
+          <div class="f"><label class="fl">Width (m)</label><input class="in" type="number" step="0.1" min="0.1" data-action="furn-dim" data-dim="width" data-id="${o.id}" value="${dims[0].toFixed(2)}"/></div>
+          <div class="f"><label class="fl">Depth (m)</label><input class="in" type="number" step="0.1" min="0.1" data-action="furn-dim" data-dim="depth" data-id="${o.id}" value="${dims[1].toFixed(2)}"/></div>
+          <div class="f"><label class="fl">Height (m)</label><input class="in" type="number" step="0.1" min="0.1" data-action="furn-dim" data-dim="height" data-id="${o.id}" value="${dims[2].toFixed(2)}"/></div>
+        </div>
+        <div class="ahint" style="margin-top:6px">Catalog default for ${esc(o.kind)}; edit any field to override.${(o.seats?.length)?` · ${o.seats.length} seat(s)`:''}</div>
         <div class="row" style="margin-top:10px"><div class="grow"></div><button class="btn sm" data-action="delete-selection">Delete <span class="kbd">Del</span></button></div>
       </div></div>`;
   }
