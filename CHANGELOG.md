@@ -6,7 +6,70 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 The JSON **config schema** is versioned independently via `CONFIG_VERSION`
-(currently `1`); changes that affect persisted documents note it explicitly.
+(currently `3`); changes that affect persisted documents note it explicitly.
+
+## [1.15.0] - 2026-06-13
+
+Feature-parity port of the Python engine's v1.9–v1.15 milestones — all
+framework-agnostic, **zero runtime dependency**, strict TypeScript. The JSON
+schema interoperates with the Python version at **v3**.
+
+### Added
+- **Placement simulation & recommendation** (`src/sim/`): a heuristic optimiser
+  that recommends the best array pose (position + steer) and the best seat for a
+  talker, blending direct-path SNR, direct-to-reverberant ratio, coverage/on-axis,
+  and multi-talker fairness, via a coarse-to-fine joint search. Sabine `estimatedRt60`.
+  Pure core (no deps); `recommendPlacement`, `scoreHeatmap`, `scorePlacement`,
+  `validateRecommendation` (reports no numerical backend — the numpy/pyroomacoustics
+  validators are Python-only), `availableBackends`, `numpyAvailable`, `defaultSimParams`.
+- **Coverage reports** (`src/coverage/check.ts`): `coverageReport` (array pickup
+  circles → covered / uncovered / overlapping) and `zoneCoverageReport`
+  (per-area in-pickup-circle + automix lobe-contention), plus `arrayCoverageCircle`
+  / `arrayCoverageRadius`.
+- **Design report** (`designReport`): a shareable Markdown / dependency-free-HTML
+  document (room + RT60, devices, routing, AEC, coverage, mute groups, validation).
+- **Auto-Route & Optimize-room** (`autoRoute`, `optimizeRoom`): one-click
+  optimisation (AEC references + automixer + near-end send, then far-end → speakers
+  and a synced mute link; optionally placement + per-area channels first). Idempotent;
+  never breaks the AEC self-reference rule.
+- **Per-coverage-area output channels + gain** (v1.12.0 parity): `CoverageZone`
+  gains optional `outputChannel` (1..8, à la MXA920 steerable coverage) + `gainDb`;
+  `setZoneOutputChannel`, `setZoneGainDb`, `autoAssignZoneChannels`. New codes
+  `COVERAGE_CHANNEL_INVALID`, `COVERAGE_CHANNEL_DUPLICATE`, `COVERAGE_GAIN_INVALID`.
+- **Logic / mute control** (`ControlConfig`, `MuteGroup`, `ZoneChannelRef`):
+  `createMuteGroup`, `addMuteGroup`, `removeMuteGroup`, `setMuteGroupMuted`. Code
+  `CONTROL_MUTE_GROUP_INVALID`.
+- **Scenes** (schema **v3**): named, recallable snapshots of the control surface
+  (mute states, per-area gains, config-inert `active`/`steer` live-layer hints).
+  `createScene`, `addScene`, `removeScene`, `getScene`, `captureScene`,
+  `recallScene`. Code `SCENE_INVALID`.
+- **Scene schedules** (additive on v3): `SceneSchedule`, builders, and
+  `SceneScheduler` (injectable clock, manual `runPending()` tick, `nextFire`,
+  cross-platform polling). Code `SCHEDULE_INVALID`.
+- **Floor-plan background** (`RoomBackground`): `setRoomBackground`,
+  `setRoomBackgroundScale`, `setRoomBackgroundOpacity`, `clearRoomBackground`,
+  `calibratedScale`.
+- **Commissioning transport seam** (`src/transport/`): `DeviceTransport` +
+  `SimulatedTransport`, `onlineRoomStatus`, `pushToOnline`, `reconcileOnline`.
+- **Beamformer DESIGN layer** (`src/beamformer/`, exported as the `beamformer`
+  namespace): pure complex-number DSP — array geometry (`sensibel8`,
+  `withActiveChannels`), zone→steering, delay-sum / superdirective (diffuse-noise
+  MVDR) weights, DI / WNG / lobe analysis, and octave-band wideband verification
+  (`designZoneBeams`, `beamPatternAzimuth`, `analyzeLobes`, `frequencyCurves`, …).
+  The live capture / DOA / OCTOVOX layers are Python-only (numpy/sounddevice).
+- **Node-only entry** `conferencing-audio-pipeline/node`: a local HTTP control API
+  (`ControlApiServer`, `ConfigHolder`) and a project file manager
+  (`ProjectFileManager` — recent files, autosave, crash recovery, migration notice).
+  Built on Node built-ins; kept off the main barrel so the core stays browser-safe.
+- **Browser configurator**: Auto-Route / Optimize / Report toolbar actions, a
+  Scenes & mute-groups panel, and per-area output-channel + gain controls.
+
+### Changed
+- **`CONFIG_VERSION` 2 → 3.** `deserialize` accepts v1/v2/v3 and migrates losslessly
+  through a chained `v1 → v2 → v3`; `control.{muteGroups,scenes,schedules}` are
+  normalized to `[]` when a partial document omits them. `autoConfigure` is now
+  idempotent (reuses an existing AEC-reference / automix bus).
+- Test suite grows to **295** tests (was 38), mirroring the Python parity suites.
 
 ## [1.8.0] - 2026-06-09
 

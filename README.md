@@ -162,6 +162,9 @@ A single pure, deterministic `validate(config) → { ok, errors, warnings }`.
 | `AEC_REFERENCE_EMPTY` | warning | AEC reference bus resolves to zero source signals. |
 | `COVERAGE_ZONE_LIMIT` | error | More than 8 coverage zones on an array. |
 | `COVERAGE_ZONE_INVALID` | error | Zone type/`alwaysOn` mismatch or degenerate geometry. |
+| `COVERAGE_CHANNEL_INVALID` | error | Coverage-area output channel out of range or on an exclusion zone. |
+| `COVERAGE_CHANNEL_DUPLICATE` | error | Two coverage areas on an array share an output channel. |
+| `COVERAGE_GAIN_INVALID` | error | Coverage-area gain trim is out of range. |
 | `MANUAL_LOBE_LIMIT` | error | Manual mode with more than 8 lobes/zones. |
 | `AUTOMIXER_INVALID` | error | Automixer gating/NLP value out of range. |
 | `DEVICE_PROFILE_UNKNOWN` | error | Device references a profile id not in the catalog. |
@@ -175,6 +178,9 @@ A single pure, deterministic `validate(config) → { ok, errors, warnings }`.
 | `DSP_CHAIN_NO_LEVEL` | warning | A device has DSP blocks but no gain/mute stage. |
 | `NAMING_DUPLICATE_LABEL` | warning | Two or more devices share the same label. |
 | `NAMING_EMPTY_LABEL` | warning | A device has an empty label. |
+| `CONTROL_MUTE_GROUP_INVALID` | error | A mute group references a missing device/area, or is empty. |
+| `SCENE_INVALID` | error | A scene is empty, duplicates an id, or references a missing group/array/area. |
+| `SCHEDULE_INVALID` | error | A scene schedule has a bad time/day, duplicate id, or recalls a missing scene. |
 
 `ok` is `true` iff there are **no errors** (warnings are allowed).
 
@@ -308,7 +314,7 @@ the AEC trap/fix is in [`demo.mjs`](demo.mjs) (`npm run demo`, after `npm run bu
 
 ```bash
 npm install
-npm test          # vitest run — 38 tests
+npm test          # vitest run — 295 tests
 npm run typecheck # tsc --noEmit (strict)
 npm run build     # emit ESM + .d.ts to dist/
 ```
@@ -362,6 +368,73 @@ discovery, firmware, or network I/O):
 - **Device templates** — capture a configured device (profile + DSP chain) and
   stamp out copies (`deviceTemplate` / `instantiateTemplate`).
 - **Light/dark theme** toggle.
+
+## Simulation, reports, scenes & commissioning (1.9.0 – 1.15.0)
+
+A feature-parity port of the Python engine's later milestones. All
+framework-agnostic and **zero runtime dependency**; the JSON schema is now **v3**
+and interoperates with the Python version (v1/v2 documents migrate losslessly).
+
+- **Coverage reports** — `coverageReport(config)` returns covered / uncovered /
+  overlapping arrays from each array's floor pickup circle (mount height × profile
+  cone angle); `zoneCoverageReport(config)` answers, per drawn coverage *area*,
+  "is it inside its array's pickup circle?" and flags automix **lobe contention**
+  (an area covered by 2+ arrays). `arrayCoverageCircle` / `arrayCoverageRadius`.
+- **Design report** — `designReport(config, 'markdown' | 'html')` produces a
+  shareable doc (room + RT60, devices, routing, AEC, coverage areas, mute groups,
+  validation). HTML conversion is dependency-free.
+- **Auto-Route / Optimize-room** — `autoRoute(config)` one-click optimises (AEC
+  references + automixer + near-end send, then far-end → loudspeakers and a synced
+  mic mute-link) with a change summary; `optimizeRoom(config, opts)` additionally
+  recommends + applies each array's placement and channels every coverage area.
+  Both are **idempotent** and never break the AEC self-reference rule.
+- **Per-coverage-area output channels + gain** — a pickup zone may carry its own
+  numbered `outputChannel` (1..8, MXA920-style steerable coverage; grows an
+  `<id>-out-ch-N` port) and a `gainDb` trim. `setZoneOutputChannel`,
+  `setZoneGainDb`, `autoAssignZoneChannels`.
+- **Logic / mute control** — `ControlConfig` + `MuteGroup` model a named set of
+  devices and/or coverage-area channels that mute together
+  (`createMuteGroup`, `addMuteGroup`, `setMuteGroupMuted`, …).
+- **Scenes (schema v3)** — named, recallable snapshots of the control surface
+  (mute states + per-area gains, plus config-inert `active`/`steer` live-layer
+  hints). `captureScene`, `recallScene`, `createScene` / `addScene` / `getScene`.
+- **Scene schedules** — recall a scene at a local `"HH:MM"` on chosen weekdays;
+  `SceneScheduler` (injectable clock, manual `runPending()` tick, `nextFire`).
+- **Floor-plan background** — `setRoomBackground` + `calibratedScale` (drag a line
+  over a known distance to derive metres-per-pixel).
+- **Placement simulation** — `recommendPlacement` / `scoreHeatmap` /
+  `estimatedRt60`: a heuristic optimiser blending direct-path SNR, DRR,
+  coverage/on-axis, and multi-talker fairness with a coarse-to-fine joint search.
+  Pure (no numpy); `validateRecommendation` reports that no numerical physics
+  backend is installed (those backends are Python-only).
+- **Commissioning transport seam** — `SimulatedTransport` + `pushToOnline` /
+  `reconcileOnline` / `onlineRoomStatus` model "deploy to online devices" (push,
+  read back, reconcile device-reported vs designed) with no real network I/O.
+- **Beamformer DESIGN layer** (`beamformer` namespace) — pure complex-number DSP
+  for an actual array microphone: geometry (`sensibel8`, `withActiveChannels`),
+  zone → steering, delay-and-sum / superdirective (diffuse-noise MVDR) weights,
+  DI / WNG / lobe analysis, and octave-band wideband verification
+  (`designZoneBeams`, `beamPatternAzimuth`, `analyzeLobes`, `frequencyCurves`). The
+  *live* capture / DOA / OCTOVOX layers stay Python-only (they need numpy/sounddevice).
+
+```ts
+import { autoRoute, designReport, captureScene, recallScene, beamformer } from 'conferencing-audio-pipeline';
+```
+
+### Node-only features (`conferencing-audio-pipeline/node`)
+
+A local HTTP control API and a project file manager live behind a separate
+subpath entry, so the core stays browser-safe (no `node:*` imports leak into a
+browser bundle). They build on Node's built-in modules — **no npm dependency**.
+
+```ts
+import { ControlApiServer, ConfigHolder, ProjectFileManager } from 'conferencing-audio-pipeline/node';
+
+const holder = new ConfigHolder(config);
+const srv = new ControlApiServer(() => holder.get(), (t) => holder.apply(t));
+await srv.start();   // GET /api/status · GET /api/scenes
+                     // POST /api/scenes/<id>/recall · POST /api/mute-groups/<id> {"muted": true}
+```
 
 ## Changelog
 
