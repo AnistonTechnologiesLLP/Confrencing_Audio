@@ -770,6 +770,8 @@ document.addEventListener('change',(e)=>{
     if(el.dataset.action==='set-zone-channel'){ const v=el.value; return setConfig(CAP.setZoneOutputChannel(config, el.dataset.array, el.dataset.zone, v===''?undefined:+v)); }
     if(el.dataset.action==='set-zone-gain'){ const v=el.value; return setConfig(CAP.setZoneGainDb(config, el.dataset.array, el.dataset.zone, v===''?undefined:+v)); }
     if(el.dataset.action==='mute-group-toggle'){ return setConfig(CAP.setMuteGroupMuted(config, el.dataset.id, el.checked)); }
+    if(el.dataset.action==='furn-rotate'){ const v=+el.value; if(Number.isFinite(v)) return setConfig(CAP.setFurnitureRotation(config, el.dataset.id, v)); return; }
+    if(el.dataset.action==='furn-x'||el.dataset.action==='furn-y'){ const o=config.room?.objects.find(x=>x.id===el.dataset.id); if(!o) return; const nx=el.dataset.action==='furn-x'?+el.value:o.position.x; const ny=el.dataset.action==='furn-y'?+el.value:o.position.y; if(Number.isFinite(nx)&&Number.isFinite(ny)) return setConfig(CAP.setFurniturePosition(config, el.dataset.id, {x:nx,y:ny})); return; }
     if(el.dataset.action==='nlp'){ return setConfig(CAP.configureAutomixer(config, config.automixer.processorId, CAP.setNlp(config.automixer, el.value))); }
     if(el.dataset.action==='ch-alwayson'||el.dataset.action==='ch-gate'){ return commitChannel(el.dataset.bus); }
   }catch(err){ toast(err.message); }
@@ -832,6 +834,7 @@ function deleteSelection(){
     if(s.kind==='device') setConfig(CAP.removeDevice(config,s.id));
     else if(s.kind==='talker') setConfig(CAP.removeTalker(config,s.id));
     else if(s.kind==='zone') setConfig(CAP.removeCoverageZone(config,s.arrayId,s.zoneId));
+    else if(s.kind==='furniture') setConfig(CAP.removeFurniture(config,s.id));
     else if(s.kind==='route'){ const r=config.routes.find(r=>r.id===s.id); if(r) setConfig(CAP.unroute(config,r.fromPortId,r.toPortId)); }
     ED.selection=null;
   }catch(err){ toast(err.message); }
@@ -1121,6 +1124,20 @@ function renderSelection(){
     card.innerHTML=`<div class="card" style="border-color:var(--accent)"><div class="h">Selected route</div>
       <div class="b"><div style="font-family:var(--mono);font-size:12px">${esc(r.fromPortId)} → ${esc(r.toPortId)}</div>
       <div class="row" style="margin-top:10px"><div class="grow"></div><button class="btn sm" data-action="delete-selection">Delete <span class="kbd">Del</span></button></div></div></div>`;
+  } else if(s.kind==='furniture'){
+    const o=config.room?.objects.find(x=>x.id===s.id); if(!o){ card.innerHTML=''; return; }
+    const dims=CAP.resolvedDimensions(o);
+    card.innerHTML=`<div class="card" style="border-color:var(--accent)">
+      <div class="h"><span class="dot" style="width:9px;height:9px;border-radius:50%;background:#caa46a"></span>Furniture · ${esc(o.kind)} <span class="count">${esc(o.id)}</span></div>
+      <div class="b">
+        <div class="row">
+          <div class="f"><label class="fl">X (m)</label><input class="in" type="number" step="0.1" data-action="furn-x" data-id="${o.id}" value="${o.position.x}"/></div>
+          <div class="f"><label class="fl">Y (m)</label><input class="in" type="number" step="0.1" data-action="furn-y" data-id="${o.id}" value="${o.position.y}"/></div>
+          <div class="f"><label class="fl">Rotation °</label><input class="in" type="number" step="15" data-action="furn-rotate" data-id="${o.id}" value="${o.rotationDeg??0}"/></div>
+        </div>
+        <div class="ahint" style="margin-top:6px">${dims[0].toFixed(2)} × ${dims[1].toFixed(2)} × ${dims[2].toFixed(2)} m${(o.seats?.length)?` · ${o.seats.length} seat(s)`:''}</div>
+        <div class="row" style="margin-top:10px"><div class="grow"></div><button class="btn sm" data-action="delete-selection">Delete <span class="kbd">Del</span></button></div>
+      </div></div>`;
   }
 }
 
@@ -1308,6 +1325,7 @@ function drawAngleLabel(ax,ay,bx,by,ang){
 }
 function zoneShapeLive(aid,z){ if(ED.drag&&(ED.drag.kind==='zone-move'||ED.drag.kind==='zone-resize')&&ED.drag.arrayId===aid&&ED.drag.zoneId===z.id) return ED.drag.shape; return z.shape; }
 function roomVerts(){ if(!config.room) return null; if(ED.drag?.kind==='vertex') return config.room.vertices.map((p,i)=>i===ED.drag.index?ED.drag.pos:p); return config.room.vertices; }
+function furniturePosLive(o){ return (ED.drag?.kind==='furniture-move'&&ED.drag.id===o.id) ? ED.drag.pos : o.position; }
 
 function redraw(){ if(!canvas.clientWidth) return; fitCanvas(); if(viewMode==='3d') draw3d(); else draw2d(); }
 function draw2d(){
@@ -1329,6 +1347,16 @@ function draw2d(){
       const sel=ED.selection?.kind==='zone'&&ED.selection.zoneId===z.id; if(sel){ctx.strokeStyle='#fff';ctx.lineWidth=1;ctx.stroke();}
       const c0=corners[0]; ctx.fillStyle='#cdd6f4'; ctx.font='11px '+'ui-sans-serif,system-ui'; ctx.fillText(`${zs.glyph} ${z.label}`,c0.x+4,c0.y+13);
       if(ED.tool==='select'){const br=corners[2]; ctx.fillStyle='#fff'; ctx.fillRect(br.x-4,br.y-4,8,8); ctx.strokeStyle='#6d8bff'; ctx.lineWidth=1; ctx.strokeRect(br.x-4,br.y-4,8,8);} } }
+  // furniture (room objects) — oriented footprint + seats + label
+  if(config.room){ for(const o of config.room.objects){
+    const pos=furniturePosLive(o); const dims=CAP.resolvedDimensions(o);
+    const corners=CAP.obbCorners(pos,dims[0],dims[1],o.rotationDeg||0).map(p=>w2s(p,v)); if(corners.length<3) continue;
+    ctx.beginPath(); corners.forEach((s,i)=>i?ctx.lineTo(s.x,s.y):ctx.moveTo(s.x,s.y)); ctx.closePath();
+    const sel=ED.selection?.kind==='furniture'&&ED.selection.id===o.id;
+    ctx.fillStyle='rgba(202,164,106,.14)'; ctx.fill(); ctx.strokeStyle=sel?'#fff':'#caa46a'; ctx.lineWidth=sel?2:1.5; ctx.setLineDash([]); ctx.stroke();
+    for(const seat of (o.seats||[])){ const ss=w2s(seat.position,v); ctx.beginPath();ctx.arc(ss.x,ss.y,3,0,7);ctx.fillStyle='#caa46a';ctx.fill(); }
+    const cen=w2s(pos,v); ctx.fillStyle='#e6d2a8'; ctx.font='11px ui-sans-serif,system-ui'; ctx.textAlign='center'; ctx.fillText(o.kind,cen.x,cen.y+4); ctx.textAlign='start';
+  } }
   // routes
   drawRoutes(v);
   // steering-angle rays from arrays to the selected talker
@@ -1425,6 +1453,15 @@ function draw3d(){
   if(topPts.every(Boolean)){ ctx.beginPath(); topPts.forEach((s,i)=>i?ctx.lineTo(s.x,s.y):ctx.moveTo(s.x,s.y)); ctx.closePath(); ctx.strokeStyle='#28335a'; ctx.stroke(); }
   // zones on floor
   for(const d of config.devices){ if(d.type!=='microphoneArray')continue; for(const z of d.zones){ const c=shapeCorners(z.shape).map(p=>project({x:p.x,y:0.02,z:p.y},C,v)); if(!c.every(Boolean))continue; const zs=zoneStyle(z.type); ctx.beginPath(); c.forEach((s,i)=>i?ctx.lineTo(s.x,s.y):ctx.moveTo(s.x,s.y)); ctx.closePath(); ctx.fillStyle=zs.fill; ctx.fill(); ctx.strokeStyle=zs.stroke; ctx.setLineDash(zs.dash); ctx.lineWidth=1.3; ctx.stroke(); ctx.setLineDash([]); } }
+  // furniture (extruded boxes)
+  if(config.room){ for(const o of config.room.objects){ const corners=CAP.furnitureCorners(o); if(!corners||corners.length<3)continue;
+    const oh=CAP.resolvedDimensions(o)[2]||0.5;
+    const fl=corners.map(p=>project({x:p.x,y:0,z:p.y},C,v)); const tp=corners.map(p=>project({x:p.x,y:oh,z:p.y},C,v));
+    if(!fl.every(Boolean))continue;
+    ctx.strokeStyle='#caa46a'; ctx.lineWidth=1.3;
+    ctx.beginPath(); fl.forEach((s,i)=>i?ctx.lineTo(s.x,s.y):ctx.moveTo(s.x,s.y)); ctx.closePath(); ctx.fillStyle='rgba(202,164,106,.12)'; ctx.fill(); ctx.stroke();
+    if(tp.every(Boolean)){ ctx.beginPath(); tp.forEach((s,i)=>i?ctx.lineTo(s.x,s.y):ctx.moveTo(s.x,s.y)); ctx.closePath(); ctx.fillStyle='rgba(202,164,106,.18)'; ctx.fill(); ctx.stroke();
+      corners.forEach((_,i)=>{ const a=fl[i],t2=tp[i]; if(a&&t2){ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(t2.x,t2.y);ctx.stroke();} }); } } }
   // routes
   for(const r of config.routes){ const f=CAP.findPort(config,r.fromPortId),t=CAP.findPort(config,r.toPortId); if(!f||!t)continue; const a=config.devices.find(d=>d.id===f.deviceId),b2=config.devices.find(d=>d.id===t.deviceId); const pa=a&&dev3(a),pb=b2&&dev3(b2); if(!pa||!pb)continue; const sa=project(pa,C,v),sb=project(pb,C,v); if(!sa||!sb)continue; ctx.strokeStyle=errorRefs.has(r.id)?'#ff6b81':(f.transport==='dante'?'#5fb6ff':'#ffc06a'); ctx.globalAlpha=.85; ctx.lineWidth=1.8; ctx.beginPath();ctx.moveTo(sa.x,sa.y);ctx.lineTo(sb.x,sb.y);ctx.stroke(); ctx.globalAlpha=1; }
   // devices (depth-sorted, with pole to floor)
@@ -1503,6 +1540,7 @@ function hitTest(world,v){
   for(const d of config.devices){ if(d.position){ const s=w2s(d.position,v); if(Math.hypot(s.x-sp.x,s.y-sp.y)<14) return {kind:'device',id:d.id,pos:d.position}; } }
   for(const d of config.devices){ if(d.type!=='microphoneArray')continue; for(const z of d.zones){ if(z.shape.kind!=='rect')continue; const c=shapeCorners(z.shape).map(p=>w2s(p,v)); if(Math.hypot(c[2].x-sp.x,c[2].y-sp.y)<10) return {kind:'zone-resize',arrayId:d.id,zoneId:z.id,shape:z.shape}; } }
   for(const d of config.devices){ if(d.type!=='microphoneArray')continue; for(const z of d.zones){ if(z.shape.kind!=='rect')continue; const{origin:o,width:w,height:h}=z.shape; if(world.x>=o.x&&world.x<=o.x+w&&world.y>=o.y&&world.y<=o.y+h) return {kind:'zone-move',arrayId:d.id,zoneId:z.id,shape:z.shape,grab:{dx:world.x-o.x,dy:world.y-o.y}}; } }
+  if(config.room){ for(const o of config.room.objects){ if(CAP.pointInPolygon(world, CAP.furnitureCorners(o))) return {kind:'furniture-move',id:o.id,pos:o.position,grab:{dx:world.x-o.position.x,dy:world.y-o.position.y}}; } }
   if(config.room){ for(let i=0;i<config.room.vertices.length;i++){ const s=w2s(config.room.vertices[i],v); if(Math.hypot(s.x-sp.x,s.y-sp.y)<9) return {kind:'vertex',index:i,pos:config.room.vertices[i]}; } }
   // routes
   for(const r of config.routes){ const f=CAP.findPort(config,r.fromPortId),t=CAP.findPort(config,r.toPortId); if(!f||!t)continue; const a=config.devices.find(d=>d.id===f.deviceId),b=config.devices.find(d=>d.id===t.deviceId); if(!a?.position||!b?.position)continue; if(distToSeg(sp,w2s(a.position,v),w2s(b.position,v))<7) return {kind:'route',id:r.id}; }
@@ -1515,6 +1553,7 @@ canvas.addEventListener('pointermove',(e)=>{ if(viewMode==='3d') return on3dMove
   if(!ED.drag)return; const p={x:snap(w.x),y:snap(w.y)};
   if(ED.drag.kind==='device'||ED.drag.kind==='talker')ED.drag.pos=p;
   else if(ED.drag.kind==='vertex')ED.drag.pos=p;
+  else if(ED.drag.kind==='furniture-move')ED.drag.pos={x:snap(p.x-ED.drag.grab.dx),y:snap(p.y-ED.drag.grab.dy)};
   else if(ED.drag.kind==='zone-move')ED.drag.shape={...ED.drag.shape,origin:{x:snap(p.x-ED.drag.grab.dx),y:snap(p.y-ED.drag.grab.dy)}};
   else if(ED.drag.kind==='zone-resize')ED.drag.shape={...ED.drag.shape,width:Math.max(0.3,snap(p.x-ED.drag.shape.origin.x)),height:Math.max(0.3,snap(p.y-ED.drag.shape.origin.y))};
   else if(ED.drag.kind==='zone-new')ED.drag.cur=p;
@@ -1523,7 +1562,7 @@ canvas.addEventListener('pointermove',(e)=>{ if(viewMode==='3d') return on3dMove
 canvas.addEventListener('pointerdown',(e)=>{ if(viewMode==='3d') return on3dDown(e); const v=view(),w=mouseW(e,v),p={x:snap(w.x),y:snap(w.y)}; canvas.setPointerCapture(e.pointerId);
   try{
     if(ED.tool==='select'){ const hit=hitTest(w,v); ED.drag=(hit&&hit.kind!=='route')?hit:null;
-      if(hit){ if(hit.kind==='device')ED.selection={kind:'device',id:hit.id}; else if(hit.kind==='talker')ED.selection={kind:'talker',id:hit.id}; else if(hit.kind==='zone-move'||hit.kind==='zone-resize')ED.selection={kind:'zone',arrayId:hit.arrayId,zoneId:hit.zoneId}; else if(hit.kind==='route')ED.selection={kind:'route',id:hit.id}; }
+      if(hit){ if(hit.kind==='device')ED.selection={kind:'device',id:hit.id}; else if(hit.kind==='talker')ED.selection={kind:'talker',id:hit.id}; else if(hit.kind==='zone-move'||hit.kind==='zone-resize')ED.selection={kind:'zone',arrayId:hit.arrayId,zoneId:hit.zoneId}; else if(hit.kind==='furniture-move')ED.selection={kind:'furniture',id:hit.id}; else if(hit.kind==='route')ED.selection={kind:'route',id:hit.id}; }
       else ED.selection=null; renderSelection(); render(); return; }
     if(ED.tool==='connect'){ const hit=hitTest(w,v); const dev=hit?.kind==='device'?hit.id:null; if(!dev)return;
       if(!ED.connectFrom){ ED.connectFrom=dev; return redraw(); }
@@ -1546,6 +1585,7 @@ canvas.addEventListener('pointerup',()=>{ if(viewMode==='3d') return on3dUp(); c
     else if(d.kind==='talker') setConfig(CAP.setTalkerPosition(config,d.id,d.pos));
     else if(d.kind==='vertex') setConfig(CAP.setRoom(config,{...config.room,vertices:config.room.vertices.map((p,i)=>i===d.index?d.pos:p)}));
     else if(d.kind==='zone-move'||d.kind==='zone-resize') setConfig(CAP.setZoneShape(config,d.arrayId,d.zoneId,d.shape));
+    else if(d.kind==='furniture-move') setConfig(CAP.setFurniturePosition(config,d.id,d.pos));
     else if(d.kind==='zone-new'){ const o={x:Math.min(d.start.x,d.cur.x),y:Math.min(d.start.y,d.cur.y)}; const w=Math.abs(d.cur.x-d.start.x),h=Math.abs(d.cur.y-d.start.y);
       if(w>=0.3&&h>=0.3){ const id=`${d.arrayId}-z${zoneSeq++}`; const shape={kind:'rect',origin:o,width:snap(w),height:snap(h)}; setConfig(CAP.addCoverageZone(config,d.arrayId,makeZone(d.zoneType||'dynamic',id,shape))); } else redraw(); }
   }catch(err){ toast(err.message); redraw(); }
