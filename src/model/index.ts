@@ -6,6 +6,7 @@ export * from './matrix.js';
 export * from './dsp.js';
 export * from './room.js';
 export * from './talker.js';
+export * from './control.js';
 export * from './dsp-blocks.js';
 export * from './devices.js';
 export * from './config.js';

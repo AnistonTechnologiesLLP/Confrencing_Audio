@@ -29,6 +29,12 @@ export type ValidationCode =
   | 'COVERAGE_ZONE_LIMIT'
   /** A zone has an invalid type/alwaysOn pairing or degenerate geometry. */
   | 'COVERAGE_ZONE_INVALID'
+  /** Coverage-area output channel is out of range or assigned to an exclusion zone. */
+  | 'COVERAGE_CHANNEL_INVALID'
+  /** Two coverage areas on the same array share an output channel. */
+  | 'COVERAGE_CHANNEL_DUPLICATE'
+  /** Coverage-area gain trim is out of range. */
+  | 'COVERAGE_GAIN_INVALID'
   /** Manual mode with more than 8 lobes/zones. */
   | 'MANUAL_LOBE_LIMIT'
   // --- automixer ---
@@ -57,7 +63,14 @@ export type ValidationCode =
   /** Two or more devices share the same label (warning). */
   | 'NAMING_DUPLICATE_LABEL'
   /** A device has an empty/whitespace label (warning). */
-  | 'NAMING_EMPTY_LABEL';
+  | 'NAMING_EMPTY_LABEL'
+  // --- control: mute groups / scenes / schedules (v1.12.0 + v3) ---
+  /** A mute group references a missing device or coverage area, or is empty. */
+  | 'CONTROL_MUTE_GROUP_INVALID'
+  /** A scene is empty, duplicates an id, or references a missing group/array/area. */
+  | 'SCENE_INVALID'
+  /** A scene schedule has a bad time/day, duplicates an id, or recalls a missing scene. */
+  | 'SCHEDULE_INVALID';
 
 /** Human-readable, one-line descriptions keyed by code (used in the README/catalog). */
 export const CODE_DESCRIPTIONS: Record<ValidationCode, string> = {
@@ -71,6 +84,10 @@ export const CODE_DESCRIPTIONS: Record<ValidationCode, string> = {
   AEC_REFERENCE_EMPTY: 'AEC reference bus resolves to zero source signals.',
   COVERAGE_ZONE_LIMIT: 'More than 8 coverage zones on an array.',
   COVERAGE_ZONE_INVALID: 'Zone has invalid type/alwaysOn pairing or degenerate geometry.',
+  COVERAGE_CHANNEL_INVALID:
+    'Coverage-area output channel is out of range or assigned to an exclusion zone.',
+  COVERAGE_CHANNEL_DUPLICATE: 'Two coverage areas on the same array share an output channel.',
+  COVERAGE_GAIN_INVALID: 'Coverage-area gain trim is out of range.',
   MANUAL_LOBE_LIMIT: 'Manual mode with more than 8 lobes/zones.',
   AUTOMIXER_INVALID: 'Automixer value out of range or output bus unresolved.',
   DEVICE_PROFILE_UNKNOWN: 'Device references a profile id not in the catalog.',
@@ -84,6 +101,12 @@ export const CODE_DESCRIPTIONS: Record<ValidationCode, string> = {
   DSP_CHAIN_NO_LEVEL: 'Device has DSP blocks but no gain/mute stage.',
   NAMING_DUPLICATE_LABEL: 'Two or more devices share the same label.',
   NAMING_EMPTY_LABEL: 'A device has an empty label.',
+  CONTROL_MUTE_GROUP_INVALID:
+    'A mute group references a missing device or coverage area, or is empty.',
+  SCENE_INVALID:
+    "A scene is empty, duplicates another scene's id, or references a missing mute group, array, or coverage area.",
+  SCHEDULE_INVALID:
+    "A scene schedule has a bad time/day, duplicates another schedule's id, or recalls a missing scene.",
 };
 
 /** A single validation finding with references to the offending entities. */

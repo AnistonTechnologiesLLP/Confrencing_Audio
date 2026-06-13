@@ -41,9 +41,9 @@ export function deserialize(json: string): SystemConfig {
   if (typeof obj.version !== 'number') {
     throw new DeserializeError('Missing numeric "version".');
   }
-  if (obj.version !== 1 && obj.version !== CONFIG_VERSION) {
+  if (obj.version !== 1 && obj.version !== 2 && obj.version !== CONFIG_VERSION) {
     throw new DeserializeError(
-      `Unsupported config version ${obj.version}; expected 1 or ${CONFIG_VERSION}.`,
+      `Unsupported config version ${obj.version}; expected 1, 2 or ${CONFIG_VERSION}.`,
     );
   }
   for (const field of ['devices', 'routes', 'matrix', 'automixer', 'muteLinks', 'metadata']) {
@@ -54,7 +54,9 @@ export function deserialize(json: string): SystemConfig {
   }
   // Backward-compatible: `talkers` was added after v1 shipped; default it.
   if (!Array.isArray(obj.talkers)) obj.talkers = [];
+  // Migration chain: each step is lossless and bumps one version.
   if (obj.version === 1) migrateV1ToV2(obj);
+  if (obj.version === 2) migrateV2ToV3(obj);
   return parsed as SystemConfig;
 }
 
@@ -68,6 +70,22 @@ function migrateV1ToV2(obj: Record<string, unknown>): void {
   for (const d of devices) {
     if (typeof d.profileId !== 'string') d.profileId = defaultProfileId(d.type as DeviceType);
     if (!Array.isArray(d.dspBlocks)) d.dspBlocks = [];
+  }
+  obj.version = 2;
+}
+
+/**
+ * In-place migration of a v2 document to v3. v3 adds `control.scenes` (named
+ * recallable scenes) — purely additive: a v2 file that has a `control` section
+ * gains an empty scene list, and loses nothing. Files without a `control`
+ * section are already valid v3 (`control` is optional).
+ */
+function migrateV2ToV3(obj: Record<string, unknown>): void {
+  const control = obj.control;
+  if (control !== null && typeof control === 'object') {
+    const c = control as Record<string, unknown>;
+    if (!Array.isArray(c.scenes)) c.scenes = [];
+    if (!Array.isArray(c.schedules)) c.schedules = [];
   }
   obj.version = CONFIG_VERSION;
 }

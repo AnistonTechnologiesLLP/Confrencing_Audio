@@ -4,9 +4,10 @@ import type { MatrixMixer } from './matrix.js';
 import type { AutomixerConfig, MuteLink } from './dsp.js';
 import type { RoomLayout } from './room.js';
 import type { Talker } from './talker.js';
+import type { ControlConfig } from './control.js';
 
 /** Current serialization schema version. Bump on breaking model changes. */
-export const CONFIG_VERSION = 2;
+export const CONFIG_VERSION = 3;
 
 /** A directed connection between an output port and an input port. */
 export interface Route {
@@ -48,6 +49,8 @@ export interface SystemConfig {
   talkers: Talker[];
   /** Optional deployment lifecycle state (design/online/deployed). */
   deployment?: DeploymentState;
+  /** Optional control surface: mute groups, scenes, schedules (schema v3). */
+  control?: ControlConfig;
   /** Document metadata. */
   metadata: { name: string; createdAt: string };
 }

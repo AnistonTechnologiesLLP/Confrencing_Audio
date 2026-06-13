@@ -14,6 +14,30 @@ export interface RoomLayout {
   units: 'meters';
   /** Arbitrary furniture / fixtures, opaque to this module. */
   objects: RoomObject[];
+  /** Optional floor-plan image laid under the room (v1.10.0). */
+  background?: RoomBackground;
+}
+
+/**
+ * A floor-plan image laid under the room (v1.10.0). `path` is a file reference
+ * (not embedded); `imageWidthPx`/`imageHeightPx` persist so the world rect is
+ * reconstructable even if the file is missing. `scaleMPerPx` is `undefined`
+ * until calibrated; `origin` is the world coordinate (metres) of the image's
+ * top-left corner.
+ */
+export interface RoomBackground {
+  /** File reference to the image (not embedded in the config). */
+  path: string;
+  /** Source image width in pixels. */
+  imageWidthPx: number;
+  /** Source image height in pixels. */
+  imageHeightPx: number;
+  /** Metres-per-pixel scale, once calibrated (`undefined` until then). */
+  scaleMPerPx?: number;
+  /** World coordinate (metres) of the image's top-left corner. */
+  origin: Point2D;
+  /** Render opacity, `0..1`. */
+  opacity: number;
 }
 
 /** An opaque object placed in the room (table, podium, etc.). */

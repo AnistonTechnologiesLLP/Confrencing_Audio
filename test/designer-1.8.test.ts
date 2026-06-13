@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  CONFIG_VERSION,
   createConfig,
   addDevice,
   route,
@@ -151,8 +152,8 @@ describe('projects (multi-room)', () => {
     const restored = deserializeProject(serializeProject(proj));
     expect(restored.rooms[0]!.config.devices.length).toBe(1);
     expect(restored.activeRoomId).toBe('room-1');
-    // each room migrates through the standard config deserializer (version 2)
-    expect(restored.rooms[0]!.config.version).toBe(2);
+    // each room migrates through the standard config deserializer
+    expect(restored.rooms[0]!.config.version).toBe(CONFIG_VERSION);
   });
 
   it('migrates a v1 room config inside a project', () => {
@@ -161,6 +162,6 @@ describe('projects (multi-room)', () => {
     doc.rooms[0].config.version = 1;
     for (const d of doc.rooms[0].config.devices) delete d.profileId;
     const restored = deserializeProject(JSON.stringify(doc));
-    expect(restored.rooms[0]!.config.version).toBe(2);
+    expect(restored.rooms[0]!.config.version).toBe(CONFIG_VERSION);
   });
 });

@@ -4,7 +4,12 @@ import { isMicDevice } from '../model/devices.js';
 import {
   MAX_ZONES_PER_ARRAY,
   MAX_MANUAL_LOBES,
+  ZONE_GAIN_DB_MIN,
+  ZONE_GAIN_DB_MAX,
+  isPickupZone,
 } from '../model/coverage.js';
+import { findDevice } from '../model/config.js';
+import { parseHhmm, WEEKDAYS } from '../model/control.js';
 import {
   GATING_SENSITIVITY_MIN,
   GATING_SENSITIVITY_MAX,
@@ -44,6 +49,7 @@ export function validate(config: SystemConfig): ValidationResult {
   validateAutomixer(config, add);
   validateProfilesAndBlocks(config, add);
   validateCommissioning(config, add);
+  validateControl(config, add);
 
   const errors = issues.filter((i) => i.severity === 'error');
   const warnings = issues.filter((i) => i.severity === 'warning');
@@ -110,6 +116,7 @@ function validateCoverage(config: SystemConfig, add: AddIssue): void {
         [device.id],
       );
     }
+    const channelsSeen = new Map<number, string>();
     for (const zone of device.zones) {
       const expectedAlwaysOn = zone.type === 'dedicated';
       if (zone.alwaysOn !== expectedAlwaysOn) {
@@ -129,6 +136,42 @@ function validateCoverage(config: SystemConfig, add: AddIssue): void {
           'error',
           'COVERAGE_ZONE_INVALID',
           `Zone "${zone.id}" on array "${device.id}" has degenerate geometry.`,
+          [device.id, zone.id],
+        );
+      }
+      // Per-area output channel + gain (v1.12.0).
+      const ch = zone.outputChannel;
+      if (ch !== undefined) {
+        if (!isPickupZone(zone)) {
+          add(
+            'error',
+            'COVERAGE_CHANNEL_INVALID',
+            `Exclusion zone "${zone.id}" on array "${device.id}" cannot carry an output channel.`,
+            [device.id, zone.id],
+          );
+        } else if (!(ch >= 1 && ch <= MAX_ZONES_PER_ARRAY && Number.isInteger(ch))) {
+          add(
+            'error',
+            'COVERAGE_CHANNEL_INVALID',
+            `Zone "${zone.id}" on array "${device.id}" has output channel ${ch}, out of range 1..${MAX_ZONES_PER_ARRAY}.`,
+            [device.id, zone.id],
+          );
+        } else if (channelsSeen.has(ch)) {
+          add(
+            'error',
+            'COVERAGE_CHANNEL_DUPLICATE',
+            `Array "${device.id}" assigns output channel ${ch} to both "${channelsSeen.get(ch)!}" and "${zone.id}".`,
+            [device.id, zone.id, channelsSeen.get(ch)!],
+          );
+        } else {
+          channelsSeen.set(ch, zone.id);
+        }
+      }
+      if (zone.gainDb !== undefined && !(zone.gainDb >= ZONE_GAIN_DB_MIN && zone.gainDb <= ZONE_GAIN_DB_MAX)) {
+        add(
+          'error',
+          'COVERAGE_GAIN_INVALID',
+          `Zone "${zone.id}" on array "${device.id}" gain ${zone.gainDb} dB is out of range [${ZONE_GAIN_DB_MIN}, ${ZONE_GAIN_DB_MAX}].`,
           [device.id, zone.id],
         );
       }
@@ -282,6 +325,97 @@ function validateCommissioning(config: SystemConfig, add: AddIssue): void {
     }
   }
   validateNaming(config, add);
+}
+
+/** Mute groups, scenes, and scene schedules (v1.12.0 + v3). */
+function validateControl(config: SystemConfig, add: AddIssue): void {
+  const control = config.control;
+  if (!control) return;
+
+  for (const group of control.muteGroups) {
+    if (group.deviceIds.length === 0 && group.zoneRefs.length === 0) {
+      add(
+        'error',
+        'CONTROL_MUTE_GROUP_INVALID',
+        `Mute group "${group.id}" is empty (no devices or coverage areas).`,
+        [group.id],
+      );
+    }
+    for (const did of group.deviceIds) {
+      const dev = findDevice(config, did);
+      if (!dev) {
+        add('error', 'CONTROL_MUTE_GROUP_INVALID', `Mute group "${group.id}" references missing device "${did}".`, [group.id, did]);
+      } else if (!deviceCapabilities(dev).mute) {
+        add('warning', 'MUTE_LINK_UNSUPPORTED', `Mute group "${group.id}" includes device "${did}" which has no mute capability.`, [group.id, did]);
+      }
+    }
+    for (const ref of group.zoneRefs) {
+      const arr = findDevice(config, ref.arrayId);
+      if (!arr || arr.type !== 'microphoneArray') {
+        add('error', 'CONTROL_MUTE_GROUP_INVALID', `Mute group "${group.id}" references missing array "${ref.arrayId}".`, [group.id, ref.arrayId]);
+      } else if (!arr.zones.some((z) => z.id === ref.zoneId)) {
+        add('error', 'CONTROL_MUTE_GROUP_INVALID', `Mute group "${group.id}" references missing zone "${ref.zoneId}" on array "${ref.arrayId}".`, [group.id, ref.arrayId, ref.zoneId]);
+      }
+    }
+  }
+
+  const groupIds = new Set(control.muteGroups.map((g) => g.id));
+  const seenSceneIds = new Set<string>();
+  for (const scene of control.scenes) {
+    if (seenSceneIds.has(scene.id)) {
+      add('error', 'SCENE_INVALID', `Duplicate scene id "${scene.id}".`, [scene.id]);
+    }
+    seenSceneIds.add(scene.id);
+    if (
+      Object.keys(scene.muteStates).length === 0 &&
+      scene.zoneStates.length === 0 &&
+      scene.steer.length === 0
+    ) {
+      add('error', 'SCENE_INVALID', `Scene "${scene.id}" is empty (no mute states, zone states, or steer).`, [scene.id]);
+    }
+    for (const gid of Object.keys(scene.muteStates)) {
+      if (!groupIds.has(gid)) {
+        add('error', 'SCENE_INVALID', `Scene "${scene.id}" references missing mute group "${gid}".`, [scene.id, gid]);
+      }
+    }
+    for (const zs of scene.zoneStates) {
+      const arr = findDevice(config, zs.arrayId);
+      if (!arr || arr.type !== 'microphoneArray') {
+        add('error', 'SCENE_INVALID', `Scene "${scene.id}" references missing array "${zs.arrayId}".`, [scene.id, zs.arrayId]);
+      } else if (!arr.zones.some((z) => z.id === zs.zoneId)) {
+        add('error', 'SCENE_INVALID', `Scene "${scene.id}" references missing zone "${zs.zoneId}" on array "${zs.arrayId}".`, [scene.id, zs.arrayId, zs.zoneId]);
+      }
+    }
+    for (const st of scene.steer) {
+      const arr = findDevice(config, st.arrayId);
+      if (!arr || arr.type !== 'microphoneArray') {
+        add('error', 'SCENE_INVALID', `Scene "${scene.id}" steers a missing array "${st.arrayId}".`, [scene.id, st.arrayId]);
+      }
+    }
+  }
+
+  const sceneIds = new Set(control.scenes.map((s) => s.id));
+  const seenScheduleIds = new Set<string>();
+  for (const sched of control.schedules) {
+    if (seenScheduleIds.has(sched.id)) {
+      add('error', 'SCHEDULE_INVALID', `Duplicate schedule id "${sched.id}".`, [sched.id]);
+    }
+    seenScheduleIds.add(sched.id);
+    if (!sceneIds.has(sched.sceneId)) {
+      add('error', 'SCHEDULE_INVALID', `Schedule "${sched.id}" recalls missing scene "${sched.sceneId}".`, [sched.id, sched.sceneId]);
+    }
+    if (parseHhmm(sched.time) === null) {
+      add('error', 'SCHEDULE_INVALID', `Schedule "${sched.id}" has invalid time "${sched.time}" (expected "HH:MM").`, [sched.id]);
+    }
+    if (sched.days.length === 0) {
+      add('error', 'SCHEDULE_INVALID', `Schedule "${sched.id}" has no days.`, [sched.id]);
+    }
+    for (const day of sched.days) {
+      if (!(WEEKDAYS as readonly string[]).includes(day)) {
+        add('error', 'SCHEDULE_INVALID', `Schedule "${sched.id}" has unknown day "${day}" (expected one of ${WEEKDAYS.join(', ')}).`, [sched.id]);
+      }
+    }
+  }
 }
 
 function validateNaming(config: SystemConfig, add: AddIssue): void {

@@ -22,6 +22,10 @@ export const MAX_MANUAL_LOBES = 8;
 /** Canonical dedicated-zone side length, metres (~6 ft). Used as a default only. */
 export const DEFAULT_DEDICATED_ZONE_SIZE_M = 1.8;
 
+/** Inclusive valid range for a coverage area's per-area gain trim (dB). */
+export const ZONE_GAIN_DB_MIN = -60;
+export const ZONE_GAIN_DB_MAX = 12;
+
 /**
  * A coverage zone within an array's pickup field.
  *
@@ -47,6 +51,17 @@ export interface CoverageZone {
   alwaysOn: boolean;
   /** Human-readable label. */
   label: string;
+  /**
+   * v1.12.0 — Designer-style steerable-coverage output. A **pickup** zone may
+   * carry its own numbered output channel (`1..8`) so it feeds a dedicated
+   * per-area bus (`<arrayId>-out-ch-N`), the way an MXA920's steerable coverage
+   * gives each of its 8 areas an individual output. `undefined` = mixed into the
+   * array's automix only. Omitted from JSON when absent, so v2 configs (and the
+   * older TS version) round-trip unchanged.
+   */
+  outputChannel?: number;
+  /** v1.12.0 — per-area gain trim (dB), range {@link ZONE_GAIN_DB_MIN}..{@link ZONE_GAIN_DB_MAX}. */
+  gainDb?: number;
 }
 
 /** Whether a zone produces pickup (and thus an output lobe in manual mode). */

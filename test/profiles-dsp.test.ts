@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  CONFIG_VERSION,
   createConfig,
   addDevice,
   createProcessor,
@@ -170,7 +171,7 @@ describe('v1 → v2 migration & round-trip', () => {
       delete d.dspBlocks;
     }
     const restored = deserialize(JSON.stringify(v1));
-    expect(restored.version).toBe(2);
+    expect(restored.version).toBe(CONFIG_VERSION);
     expect(restored.devices.find((d) => d.id === 'P')!.profileId).toBe('generic-hardware-dsp');
     expect(restored.devices.find((d) => d.id === 'A')!.dspBlocks).toEqual([]);
   });
@@ -181,6 +182,6 @@ describe('v1 → v2 migration & round-trip', () => {
     cfg = addDspBlock(cfg, 'P', createDspBlock('peq4', 'q1'));
     cfg = updateDspBlock(cfg, 'P', 'q1', { targetBusId: 'P-out-dante-1' });
     expect(deserialize(serialize(cfg))).toEqual(cfg);
-    expect(JSON.parse(serialize(cfg)).version).toBe(2);
+    expect(JSON.parse(serialize(cfg)).version).toBe(CONFIG_VERSION);
   });
 });
