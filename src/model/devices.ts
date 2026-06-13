@@ -120,3 +120,27 @@ export function isMicDevice(device: Device): device is MicDevice {
 export function isProcessor(device: Device): device is Processor {
   return device.type === 'processor';
 }
+
+/**
+ * Default elevation (metres above floor) used for 3D display and geometry when a
+ * device has no explicit {@link BaseDevice.elevation}. Ceiling devices sit near
+ * the room top; table/handheld sources sit low. Planning conveniences, not
+ * measurements.
+ */
+export function defaultElevation(device: Device, roomHeight = 3): number {
+  switch (device.type) {
+    case 'microphoneArray':
+      return roomHeight; // ceiling-mounted array
+    case 'loudspeaker':
+      return Math.max(0, roomHeight - 0.3); // near-ceiling
+    case 'codec':
+      return 0.7;
+    case 'processor':
+      return 0.4; // rack height
+    case 'wirelessMic':
+    case 'wiredMic':
+      return 1.1; // handheld / lectern height
+    default:
+      return 1;
+  }
+}

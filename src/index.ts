@@ -15,10 +15,9 @@ import type { SystemConfig, Route } from './model/config.js';
 import { findDevice } from './model/config.js';
 import type { Talker } from './model/talker.js';
 import { DEFAULT_TALKER_ELEVATION_M } from './model/talker.js';
-import { pointInShape } from './model/geometry.js';
 import { steeringAngles, type SteeringAngles, type Point3D } from './geometry/angles.js';
 import type { Device, MicDevice, Processor } from './model/devices.js';
-import { isMicDevice, isProcessor } from './model/devices.js';
+import { isMicDevice, isProcessor, defaultElevation } from './model/devices.js';
 import type { DspBlockConfig } from './model/dsp-blocks.js';
 import type { CoverageMode, CoverageZone } from './model/coverage.js';
 import type {
@@ -35,7 +34,15 @@ import {
   addCoverageZone as coverageAddZone,
   updateZoneShape as coverageUpdateZoneShape,
   removeCoverageZone as coverageRemoveZone,
+  setZoneOutputChannel as coverageSetZoneChannel,
+  setZoneGainDb as coverageSetZoneGain,
+  autoAssignZoneChannels as coverageAutoAssignChannels,
 } from './coverage/coverage.js';
+import { createMuteLink } from './dsp/mute.js';
+import { serialize } from './persistence/serialize.js';
+import { recommendPlacement, type SimParams } from './sim/index.js';
+import type { RoomBackground } from './model/room.js';
+import type { Bus } from './model/matrix.js';
 import {
   createAutomixer,
   automixerChannel,
@@ -111,6 +118,40 @@ export {
   type Project,
   type ProjectRoom,
 } from './project/project.js';
+// --- 1.10.0+: coverage check, design report, placement simulation ---
+export * from './coverage/check.js';
+export { designReport } from './report/report.js';
+export {
+  scorePlacement,
+  estimatedRt60,
+  recommendPlacement,
+  scoreHeatmap,
+  validateRecommendation,
+  availableBackends,
+  numpyAvailable,
+  type SimParams,
+  type PlacementScore,
+  type Candidate,
+  type Recommendation,
+  type Heatmap,
+  type SimValidationResult,
+} from './sim/index.js';
+// --- 1.12.0 + v3: control surface (mute groups, scenes, schedules) ---
+export * from './scenes/scenes.js';
+// --- commissioning: device-transport seam (simulated) ---
+export * from './transport/transport.js';
+// --- scene scheduler + local HTTP control API + project file manager ---
+export { SceneScheduler, type SchedulerClock } from './scheduler/scheduler.js';
+export { ControlApiServer, ConfigHolder } from './control-api/server.js';
+export {
+  ProjectFileManager,
+  defaultStateDir,
+  RECENT_MAX,
+  type OpenResult,
+  type RecoveryInfo,
+} from './files/files.js';
+// --- host-side array beamformer DESIGN layer (pure-stdlib, vendor-neutral) ---
+export * as beamformer from './beamformer/index.js';
 
 // ---------------------------------------------------------------------------
 // Config lifecycle
@@ -202,29 +243,6 @@ export function clearDevicePosition(config: SystemConfig, deviceId: string): Sys
     const { position: _p, ...rest } = d;
     return rest as Device;
   });
-}
-
-/**
- * Default elevation (metres above floor) used for 3D display when a device has
- * no explicit `elevation`. Ceiling devices sit near the room top; table/handheld
- * sources sit low. These are planning conveniences, not measurements.
- */
-export function defaultElevation(device: Device, roomHeight = 3): number {
-  switch (device.type) {
-    case 'microphoneArray':
-      return roomHeight; // ceiling-mounted array
-    case 'loudspeaker':
-      return Math.max(0, roomHeight - 0.3); // near-ceiling
-    case 'codec':
-      return 0.7;
-    case 'processor':
-      return 0.4; // rack height
-    case 'wirelessMic':
-    case 'wiredMic':
-      return 1.1; // handheld / lectern height
-    default:
-      return 1;
-  }
 }
 
 /** Set a device's elevation (metres above floor, the 3D height). Returns a new config. */
@@ -364,41 +382,7 @@ export function arrayToTalkerAngles(
   return steeringAngles(from, to);
 }
 
-/** Per-array coverage finding for a talker. */
-export interface TalkerCoverage {
-  /** `true` iff the talker is inside at least one pickup zone and no exclusion zone. */
-  captured: boolean;
-  /** Array ids whose pickup zones contain the talker. */
-  pickupArrays: string[];
-  /** Array ids whose exclusion zones contain the talker (suppressing pickup). */
-  excludedBy: string[];
-}
-
-/**
- * Determine whether a talker's floor position is **recorded**: inside any
- * array's pickup (dynamic/dedicated) zone and not inside any exclusion zone.
- * Note: an array in `automatic` mode with zero zones picks up its whole field;
- * this check is zone-based, so a talker is "captured" only where zones exist.
- */
-export function talkerCoverage(config: SystemConfig, talkerId: string): TalkerCoverage {
-  const talker = config.talkers.find((t) => t.id === talkerId);
-  const pickupArrays: string[] = [];
-  const excludedBy: string[] = [];
-  if (!talker) return { captured: false, pickupArrays, excludedBy };
-  for (const device of config.devices) {
-    if (device.type !== 'microphoneArray') continue;
-    let inPickup = false;
-    let inExclusion = false;
-    for (const zone of device.zones) {
-      if (!pointInShape(talker.position, zone.shape)) continue;
-      if (zone.type === 'exclusion') inExclusion = true;
-      else inPickup = true;
-    }
-    if (inExclusion) excludedBy.push(device.id);
-    else if (inPickup) pickupArrays.push(device.id);
-  }
-  return { captured: pickupArrays.length > 0 && excludedBy.length === 0, pickupArrays, excludedBy };
-}
+export { talkerCoverage, type TalkerCoverage } from './coverage/talker-coverage.js';
 
 // ---------------------------------------------------------------------------
 // Coverage
@@ -743,4 +727,303 @@ export function autoConfigure(config: SystemConfig): SystemConfig {
   }
 
   return configureAutomixer(next, processor.id, am);
+}
+
+// ---------------------------------------------------------------------------
+// Floor-plan background (v1.10.0)
+// ---------------------------------------------------------------------------
+
+/**
+ * Attach (or replace) a floor-plan image under the room. `path` is a file
+ * reference (not embedded). `opacity` is clamped to `0..1` (default 0.5);
+ * `origin` defaults to the world origin. Returns a new config. Throws if there
+ * is no room to attach to.
+ */
+export function setRoomBackground(
+  config: SystemConfig,
+  bg: {
+    path: string;
+    imageWidthPx: number;
+    imageHeightPx: number;
+    scaleMPerPx?: number;
+    origin?: Point2D;
+    opacity?: number;
+  },
+): SystemConfig {
+  if (!config.room) throw new Error('No room to attach a floor-plan background to.');
+  const background: RoomBackground = {
+    path: bg.path,
+    imageWidthPx: bg.imageWidthPx,
+    imageHeightPx: bg.imageHeightPx,
+    origin: bg.origin ?? { x: 0, y: 0 },
+    opacity: bg.opacity === undefined ? 0.5 : Math.max(0, Math.min(1, bg.opacity)),
+    ...(bg.scaleMPerPx !== undefined ? { scaleMPerPx: bg.scaleMPerPx } : {}),
+  };
+  return { ...config, room: { ...config.room, background } };
+}
+
+/** Set the floor-plan's metres-per-pixel scale (after calibration). Returns a new config. */
+export function setRoomBackgroundScale(config: SystemConfig, scaleMPerPx: number): SystemConfig {
+  if (!config.room?.background) throw new Error('No floor-plan background to scale.');
+  return {
+    ...config,
+    room: { ...config.room, background: { ...config.room.background, scaleMPerPx } },
+  };
+}
+
+/** Set the floor-plan render opacity (clamped 0..1). Returns a new config. */
+export function setRoomBackgroundOpacity(config: SystemConfig, opacity: number): SystemConfig {
+  if (!config.room?.background) throw new Error('No floor-plan background.');
+  return {
+    ...config,
+    room: {
+      ...config.room,
+      background: { ...config.room.background, opacity: Math.max(0, Math.min(1, opacity)) },
+    },
+  };
+}
+
+/** Remove the floor-plan background (no-op if absent). Returns a new config. */
+export function clearRoomBackground(config: SystemConfig): SystemConfig {
+  if (!config.room?.background) return config;
+  const { background: _bg, ...room } = config.room;
+  return { ...config, room };
+}
+
+/**
+ * New metres-per-pixel from a calibration drag: `scaleOld · realLen / worldDist`.
+ * `worldDist` is the on-floor length the drawn line currently spans at
+ * `scaleOld`; `realLen` is the true distance the user entered.
+ */
+export function calibratedScale(scaleOld: number, worldDist: number, realLen: number): number {
+  if (worldDist <= 1e-6) throw new Error('Calibration distance is too small.');
+  return (scaleOld * realLen) / worldDist;
+}
+
+// ---------------------------------------------------------------------------
+// Per-coverage-area output channels + gain (v1.12.0) — config-level wrappers
+// ---------------------------------------------------------------------------
+
+/**
+ * Assign (or clear with `undefined`) a coverage area's own numbered output
+ * channel (Designer steerable-coverage style). Regenerates the array's output
+ * ports. Returns a new config.
+ */
+export function setZoneOutputChannel(
+  config: SystemConfig,
+  arrayId: string,
+  zoneId: string,
+  channel: number | undefined,
+): SystemConfig {
+  return mapDevice(config, arrayId, (d) => {
+    if (d.type !== 'microphoneArray') throw new Error(`Device ${arrayId} is not a microphone array.`);
+    return coverageSetZoneChannel(d, zoneId, channel);
+  });
+}
+
+/** Set (or clear with `undefined`) a coverage area's per-area gain trim (dB). Returns a new config. */
+export function setZoneGainDb(
+  config: SystemConfig,
+  arrayId: string,
+  zoneId: string,
+  gainDb: number | undefined,
+): SystemConfig {
+  return mapDevice(config, arrayId, (d) => {
+    if (d.type !== 'microphoneArray') throw new Error(`Device ${arrayId} is not a microphone array.`);
+    return coverageSetZoneGain(d, zoneId, gainDb);
+  });
+}
+
+/** Give every pickup area on the array a sequential output channel (idempotent). Returns a new config. */
+export function autoAssignZoneChannels(config: SystemConfig, arrayId: string): SystemConfig {
+  return mapDevice(config, arrayId, (d) => {
+    if (d.type !== 'microphoneArray') throw new Error(`Device ${arrayId} is not a microphone array.`);
+    return coverageAutoAssignChannels(d);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Auto-route (one-click optimize) + change summary (v1.10.0)
+// ---------------------------------------------------------------------------
+
+/** Result of {@link autoRoute}: the new config plus a human-readable change summary. */
+export interface AutoRouteResult {
+  config: SystemConfig;
+  changes: string[];
+  counts: { crosspoints: number; routes: number; muteLinks: number };
+}
+
+/**
+ * First processor output bus whose port matches `transport` and is not a
+ * forbidden column (any AEC reference / the automix bus).
+ */
+function pickProgramBus(processor: Processor, transport: string, forbidden: Set<string>): Bus | undefined {
+  for (const bus of processor.matrix.outputBuses) {
+    const port = processor.ports.find((p) => p.id === bus.portId);
+    if (!port || port.transport !== transport) continue;
+    if (forbidden.has(bus.id)) continue;
+    return bus;
+  }
+  return undefined;
+}
+
+/**
+ * One-click optimize. Runs {@link autoConfigure} (AEC references, automixer,
+ * near-end send), then feeds the far-end to the loudspeakers and links mic
+ * mutes, returning the new config plus a human-readable summary.
+ *
+ * Invariant: never routes a mic into an AEC reference bus, so
+ * `validate(result.config).errors` stays empty (the AEC self-reference rule).
+ */
+export function autoRoute(config: SystemConfig): AutoRouteResult {
+  const processor0 = getPrimaryProcessor(config);
+  if (!processor0) {
+    return { config, changes: ['No processor in the design — nothing to route.'], counts: { crosspoints: 0, routes: 0, muteLinks: 0 } };
+  }
+
+  const changes: string[] = [];
+  const counts = { crosspoints: 0, routes: 0, muteLinks: 0 };
+
+  let next = autoConfigure(config);
+  const proc = getPrimaryProcessor(next)!; // autoConfigure never removes it
+  const pid = proc.id;
+  const mics = next.devices.filter(isMicDevice);
+  const codecs = next.devices.filter((d) => d.type === 'codec');
+  const speakers = next.devices.filter((d) => d.type === 'loudspeaker');
+
+  const aecMics = mics.filter((m) => m.aec.enabled);
+  if (aecMics.length > 0) changes.push(`AEC enabled on ${aecMics.length} mic(s), referencing the far-end bus`);
+  if (next.automixer.channels.length > 0) changes.push(`Automixer configured with ${next.automixer.channels.length} channel(s)`);
+  if (next.automixer.outputBusId && codecs.length > 0) changes.push('Mic mix routed to the codec (near-end send)');
+  if (codecs.length === 0) changes.push('No codec in the design — far-end / AEC routing skipped');
+
+  // Never reinforce into an AEC reference bus or the near-end mix bus.
+  const forbidden = new Set<string>();
+  for (const m of mics) if (m.aec.enabled && m.aec.referenceBusId) forbidden.add(m.aec.referenceBusId);
+  if (next.automixer.outputBusId) forbidden.add(next.automixer.outputBusId);
+
+  const farEndIn = new Set<string>();
+  for (const codec of codecs) {
+    for (const b of processorInputBusesForDevice(next, proc, codec.id)) farEndIn.add(b);
+  }
+
+  // Far-end audio -> loudspeakers (so remote participants are heard in the room).
+  if (speakers.length > 0 && farEndIn.size > 0) {
+    for (const spk of speakers) {
+      const inPort = spk.ports.find((p) => p.kind === 'input');
+      if (!inPort) continue;
+      const procLatest = getPrimaryProcessor(next)!; // matrix changes as routes land
+      const bus = pickProgramBus(procLatest, inPort.transport, forbidden);
+      if (!bus) continue;
+      for (const fe of farEndIn) {
+        if (!matrixFor(next, pid).isActive(fe, bus.id)) {
+          next = matrixFor(next, pid).route(fe, bus.id);
+          counts.crosspoints += 1;
+        }
+      }
+      const routeId = `r:${bus.portId}->${inPort.id}`;
+      const had = next.routes.some((r) => r.id === routeId);
+      next = route(next, bus.portId, inPort.id);
+      if (!had) {
+        counts.routes += 1;
+        changes.push(`Fed far-end audio to ${spk.label}`);
+      }
+    }
+  } else if (speakers.length > 0 && farEndIn.size === 0) {
+    changes.push('Loudspeakers present but no codec/far-end source to feed them');
+  }
+
+  // Link mic mutes to the near-end mix so a room mute syncs (mics are mute-capable).
+  if (next.automixer.outputBusId && mics.length > 0) {
+    const linkId = `ml:auto:${next.automixer.outputBusId}`;
+    if (!next.muteLinks.some((lk) => lk.id === linkId)) {
+      const link = createMuteLink(linkId, next.automixer.outputBusId, mics.map((m) => m.id), {
+        syncToCodec: codecs.length > 0,
+      });
+      next = { ...next, muteLinks: [...next.muteLinks, link] };
+      counts.muteLinks += 1;
+      changes.push(`Linked mute across ${mics.length} mic(s)` + (codecs.length > 0 ? ' (synced to codec)' : ''));
+    }
+  }
+
+  if (serialize(next) === serialize(config)) {
+    return { config, changes: ['No changes — the design is already routed.'], counts: { crosspoints: 0, routes: 0, muteLinks: 0 } };
+  }
+  return { config: next, changes, counts };
+}
+
+// ---------------------------------------------------------------------------
+// Optimize room — one-click "do everything" (v1.12.0)
+// ---------------------------------------------------------------------------
+
+/** Result of {@link optimizeRoom}. */
+export interface OptimizeRoomResult {
+  config: SystemConfig;
+  changes: string[];
+  autoRoute?: AutoRouteResult;
+}
+
+/**
+ * One-click optimize: (1) recommend + apply each array's best placement/steer
+ * (when a room + talkers exist), (2) give every pickup area its own output
+ * channel, (3) run {@link autoRoute}. Each stage is opt-out and idempotent.
+ * Pure: returns a new config; never mutates the input.
+ */
+export function optimizeRoom(
+  config: SystemConfig,
+  opts: { placeArrays?: boolean; assignChannels?: boolean; route?: boolean; params?: SimParams } = {},
+): OptimizeRoomResult {
+  const placeArrays = opts.placeArrays ?? true;
+  const assignChannels = opts.assignChannels ?? true;
+  const doRoute = opts.route ?? true;
+
+  let next = config;
+  const changes: string[] = [];
+
+  const arrays = next.devices.filter((d) => d.type === 'microphoneArray');
+
+  if (placeArrays && next.room && next.talkers.length > 0 && arrays.length > 0) {
+    for (const arr of arrays) {
+      let rec;
+      try {
+        rec = opts.params !== undefined
+          ? recommendPlacement(next, arr.id, null, opts.params)
+          : recommendPlacement(next, arr.id);
+      } catch (exc) {
+        changes.push(`Placement skipped for "${arr.label}" (${(exc as Error).message}).`);
+        continue;
+      }
+      if (!rec.arrayPos) continue;
+      next = setDevicePosition(next, arr.id, rec.arrayPos);
+      next = setDeviceElevation(next, arr.id, rec.arrayElev);
+      changes.push(
+        `Placed "${arr.label}" at (${rec.arrayPos.x.toFixed(2)}, ${rec.arrayPos.y.toFixed(2)}) m, ` +
+          `elev ${rec.arrayElev.toFixed(2)} m (score ${rec.score.total.toFixed(2)}).`,
+      );
+    }
+  }
+
+  if (assignChannels) {
+    for (const arr of next.devices) {
+      if (arr.type !== 'microphoneArray') continue;
+      const pickups = arr.zones.filter((z) => z.type !== 'exclusion');
+      const unassigned = pickups.filter((z) => z.outputChannel === undefined);
+      if (unassigned.length > 0) {
+        next = autoAssignZoneChannels(next, arr.id);
+        changes.push(`Assigned ${unassigned.length} output channel(s) on "${arr.label}".`);
+      }
+    }
+  }
+
+  let ar: AutoRouteResult | undefined;
+  if (doRoute) {
+    ar = autoRoute(next);
+    next = ar.config;
+    changes.push(...ar.changes);
+  }
+
+  if (changes.length === 0) {
+    changes.push('Nothing to optimize — room already placed, channelled, and routed.');
+  }
+  return ar !== undefined ? { config: next, changes, autoRoute: ar } : { config: next, changes };
 }

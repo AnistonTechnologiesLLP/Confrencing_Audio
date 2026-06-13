@@ -6,6 +6,8 @@ import {
   MAX_ZONES_PER_ARRAY,
   MAX_MANUAL_LOBES,
   DEFAULT_DEDICATED_ZONE_SIZE_M,
+  ZONE_GAIN_DB_MIN,
+  ZONE_GAIN_DB_MAX,
   isPickupZone,
 } from '../model/coverage.js';
 import type { Point2D, ZoneShape } from '../model/geometry.js';
@@ -56,16 +58,35 @@ export function pickupZoneCount(zones: CoverageZone[]): number {
 }
 
 /**
+ * One dedicated Dante output per pickup zone that carries an `outputChannel`
+ * (Designer steerable-coverage style). Channels are emitted in ascending order
+ * so the port list is stable regardless of zone draw order.
+ */
+function zoneChannelPorts(arrayId: string, zones: CoverageZone[]): Port[] {
+  return zones
+    .filter((z): z is CoverageZone & { outputChannel: number } =>
+      isPickupZone(z) && z.outputChannel !== undefined,
+    )
+    .sort((a, b) => a.outputChannel - b.outputChannel)
+    .map((z) =>
+      outPort(arrayId, `ch-${z.outputChannel}`, `Coverage Ch ${z.outputChannel} (${z.label})`),
+    );
+}
+
+/**
  * Generate output ports for a mode. In manual mode `lobeZoneCount` is the number
- * of **pickup** zones (exclusion zones produce no lobe).
+ * of **pickup** zones (exclusion zones produce no lobe). When `zones` carry
+ * per-area `outputChannel`s, one `<id>-out-ch-N` port is appended per channel.
  */
 export function generateArrayOutputPorts(
   arrayId: string,
   mode: CoverageMode,
   lobeZoneCount: number,
+  zones: CoverageZone[] = [],
 ): Port[] {
+  const zonePorts = zoneChannelPorts(arrayId, zones);
   if (mode === 'automatic') {
-    return [outPort(arrayId, 'mix', 'Mixed Dante Out')];
+    return [outPort(arrayId, 'mix', 'Mixed Dante Out'), ...zonePorts];
   }
   const lobeCount = Math.min(Math.max(lobeZoneCount, 0), MAX_MANUAL_LOBES);
   const ports: Port[] = [];
@@ -73,6 +94,7 @@ export function generateArrayOutputPorts(
     ports.push(outPort(arrayId, `lobe-${i}`, `Lobe ${i} Dante Out`));
   }
   ports.push(outPort(arrayId, 'automix', 'Automix Dante Out'));
+  ports.push(...zonePorts);
   return ports;
 }
 
@@ -98,7 +120,7 @@ export function createMicrophoneArray(
     id,
     type: 'microphoneArray',
     label,
-    ports: generateArrayOutputPorts(id, mode, pickupZoneCount(zones)),
+    ports: generateArrayOutputPorts(id, mode, pickupZoneCount(zones), zones),
     coverageMode: mode,
     zones: [...zones],
     aec: { enabled: false, referenceBusId: null },
@@ -118,7 +140,7 @@ export function setCoverageMode(array: MicrophoneArray, mode: CoverageMode): Mic
   return {
     ...array,
     coverageMode: mode,
-    ports: generateArrayOutputPorts(array.id, mode, pickupZoneCount(array.zones)),
+    ports: generateArrayOutputPorts(array.id, mode, pickupZoneCount(array.zones), array.zones),
   };
 }
 
@@ -139,7 +161,7 @@ export function addCoverageZone(array: MicrophoneArray, zone: CoverageZone): Mic
   return {
     ...array,
     zones,
-    ports: generateArrayOutputPorts(array.id, array.coverageMode, pickupZoneCount(zones)),
+    ports: generateArrayOutputPorts(array.id, array.coverageMode, pickupZoneCount(zones), zones),
   };
 }
 
@@ -167,7 +189,111 @@ export function removeCoverageZone(array: MicrophoneArray, zoneId: string): Micr
   return {
     ...array,
     zones,
-    ports: generateArrayOutputPorts(array.id, array.coverageMode, pickupZoneCount(zones)),
+    ports: generateArrayOutputPorts(array.id, array.coverageMode, pickupZoneCount(zones), zones),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Per-coverage-area output channel + gain (v1.12.0, Designer steerable coverage)
+// ---------------------------------------------------------------------------
+
+/** Set a zone's `outputChannel`, returning a new zone (key omitted when clearing). */
+function withChannel(zone: CoverageZone, channel: number | undefined): CoverageZone {
+  const { outputChannel: _omit, ...rest } = zone;
+  return channel === undefined ? { ...rest } : { ...rest, outputChannel: channel };
+}
+
+/** Set a zone's `gainDb`, returning a new zone (key omitted when clearing). */
+function withGain(zone: CoverageZone, gainDb: number | undefined): CoverageZone {
+  const { gainDb: _omit, ...rest } = zone;
+  return gainDb === undefined ? { ...rest } : { ...rest, gainDb };
+}
+
+/**
+ * Assign (or clear, with `undefined`) a coverage area's own output channel. The
+ * zone must be a pickup zone, `1..8`, and unique on the array. Regenerates the
+ * array's output ports so the per-area Dante out appears. Returns a new array.
+ */
+export function setZoneOutputChannel(
+  array: MicrophoneArray,
+  zoneId: string,
+  channel: number | undefined,
+): MicrophoneArray {
+  const zone = array.zones.find((z) => z.id === zoneId);
+  if (!zone) {
+    throw new CoverageError('COVERAGE_ZONE_INVALID', `Array "${array.id}" has no zone "${zoneId}".`);
+  }
+  if (channel !== undefined) {
+    if (!isPickupZone(zone)) {
+      throw new CoverageError(
+        'COVERAGE_CHANNEL_INVALID',
+        `Exclusion zone "${zoneId}" cannot have an output channel.`,
+      );
+    }
+    if (!(channel >= 1 && channel <= MAX_ZONES_PER_ARRAY && Number.isInteger(channel))) {
+      throw new CoverageError(
+        'COVERAGE_CHANNEL_INVALID',
+        `Output channel ${channel} out of range 1..${MAX_ZONES_PER_ARRAY}.`,
+      );
+    }
+    if (array.zones.some((z) => z.id !== zoneId && z.outputChannel === channel)) {
+      throw new CoverageError(
+        'COVERAGE_CHANNEL_DUPLICATE',
+        `Array "${array.id}" already uses output channel ${channel}.`,
+      );
+    }
+  }
+  const zones = array.zones.map((z) => (z.id === zoneId ? withChannel(z, channel) : z));
+  return {
+    ...array,
+    zones,
+    ports: generateArrayOutputPorts(array.id, array.coverageMode, pickupZoneCount(zones), zones),
+  };
+}
+
+/** Set (or clear, with `undefined`) a coverage area's per-area gain trim (dB). Returns a new array. */
+export function setZoneGainDb(
+  array: MicrophoneArray,
+  zoneId: string,
+  gainDb: number | undefined,
+): MicrophoneArray {
+  const zone = array.zones.find((z) => z.id === zoneId);
+  if (!zone) {
+    throw new CoverageError('COVERAGE_ZONE_INVALID', `Array "${array.id}" has no zone "${zoneId}".`);
+  }
+  if (gainDb !== undefined && !(gainDb >= ZONE_GAIN_DB_MIN && gainDb <= ZONE_GAIN_DB_MAX)) {
+    throw new CoverageError(
+      'COVERAGE_GAIN_INVALID',
+      `Zone gain ${gainDb} dB out of range [${ZONE_GAIN_DB_MIN}, ${ZONE_GAIN_DB_MAX}].`,
+    );
+  }
+  const zones = array.zones.map((z) => (z.id === zoneId ? withGain(z, gainDb) : z));
+  return { ...array, zones };
+}
+
+/**
+ * Assign sequential output channels (1, 2, …) to every pickup zone that lacks
+ * one, preserving any already-assigned channels. Idempotent. Returns a new array.
+ */
+export function autoAssignZoneChannels(array: MicrophoneArray): MicrophoneArray {
+  const used = new Set<number>(
+    array.zones.map((z) => z.outputChannel).filter((c): c is number => c !== undefined),
+  );
+  let nextCh = 1;
+  const zones = array.zones.map((z) => {
+    if (isPickupZone(z) && z.outputChannel === undefined) {
+      while (used.has(nextCh) && nextCh <= MAX_ZONES_PER_ARRAY) nextCh += 1;
+      if (nextCh <= MAX_ZONES_PER_ARRAY) {
+        used.add(nextCh);
+        return withChannel(z, nextCh);
+      }
+    }
+    return z;
+  });
+  return {
+    ...array,
+    zones,
+    ports: generateArrayOutputPorts(array.id, array.coverageMode, pickupZoneCount(zones), zones),
   };
 }
 
