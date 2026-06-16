@@ -41,9 +41,15 @@ export function deserialize(json: string): SystemConfig {
   if (typeof obj.version !== 'number') {
     throw new DeserializeError('Missing numeric "version".');
   }
-  if (obj.version !== 1 && obj.version !== 2 && obj.version !== 3 && obj.version !== CONFIG_VERSION) {
+  if (
+    obj.version !== 1 &&
+    obj.version !== 2 &&
+    obj.version !== 3 &&
+    obj.version !== 4 &&
+    obj.version !== CONFIG_VERSION
+  ) {
     throw new DeserializeError(
-      `Unsupported config version ${obj.version}; expected 1, 2, 3 or ${CONFIG_VERSION}.`,
+      `Unsupported config version ${obj.version}; expected 1, 2, 3, 4 or ${CONFIG_VERSION}.`,
     );
   }
   for (const field of ['devices', 'routes', 'matrix', 'automixer', 'muteLinks', 'metadata']) {
@@ -58,6 +64,7 @@ export function deserialize(json: string): SystemConfig {
   if (obj.version === 1) migrateV1ToV2(obj);
   if (obj.version === 2) migrateV2ToV3(obj);
   if (obj.version === 3) migrateV3ToV4(obj);
+  if (obj.version === 4) migrateV4ToV5(obj);
   // Normalize the control surface: its arrays are additive optional fields, so a
   // hand-edited or partial v3 document may omit them — default them to []
   // (mirrors the Python dataclass defaults in `_control`).
@@ -117,5 +124,15 @@ function migrateV2ToV3(obj: Record<string, unknown>): void {
  * version bump; existing devices/objects reconstruct identically.
  */
 function migrateV3ToV4(obj: Record<string, unknown>): void {
+  obj.version = 4;
+}
+
+/**
+ * In-place migration of a v4 document to v5. v5 adds `bearingDeg` (mounting
+ * bearing) to `microphoneArray` devices — a single optional, omit-when-absent
+ * field — so a v4 file gains nothing it didn't have. Pure version bump; existing
+ * arrays reconstruct byte-identically.
+ */
+function migrateV4ToV5(obj: Record<string, unknown>): void {
   obj.version = CONFIG_VERSION;
 }

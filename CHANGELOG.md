@@ -6,7 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 The JSON **config schema** is versioned independently via `CONFIG_VERSION`
-(currently `4`); changes that affect persisted documents note it explicitly.
+(currently `5`); changes that affect persisted documents note it explicitly.
+
+## [Unreleased]
+
+### Added
+- **Microphone-array mounting bearing** (schema **v4 → v5**) — `MicrophoneArray` gains
+  an optional `bearingDeg` (compass heading of the array's 0° reference, 0° = +Y), so a
+  detected array-relative azimuth can be mapped into room coordinates — the prerequisite
+  for room-aware steering. Additive and omit-when-absent (mirrors the loudspeaker's
+  `bearingDeg`), so existing v1–v4 documents migrate byte-identically; `setArrayBearing`
+  API. Parity-matched with the Python engine's v5. (`src/model/devices.ts`,
+  `src/persistence/serialize.ts`, `src/index.ts`; +3 round-trip/migration tests.)
 
 ## [1.16.0] - 2026-06-13
 

@@ -468,6 +468,12 @@ zero-dependency; v1–v3 documents migrate losslessly):
 import { createCamera, addCamera, setCameraBearing, addFurniture, simulateRoomCoverage } from 'conferencing-audio-pipeline';
 ```
 
+**Schema v5** additionally gives `MicrophoneArray` an optional `bearingDeg` (its mounting
+heading, 0° = +Y) — the prerequisite for mapping a detected array-relative azimuth into room
+coordinates (room-aware steering). Additive and omit-when-absent, so v1–v4 documents migrate
+byte-identically; set it with `setArrayBearing(config, arrayId, deg)`. At matching v5 parity
+with the Python engine.
+
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md) for the version history.

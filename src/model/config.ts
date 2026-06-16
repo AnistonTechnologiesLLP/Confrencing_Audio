@@ -7,7 +7,7 @@ import type { Talker } from './talker.js';
 import type { ControlConfig } from './control.js';
 
 /** Current serialization schema version. Bump on breaking model changes. */
-export const CONFIG_VERSION = 4;
+export const CONFIG_VERSION = 5;
 
 /** A directed connection between an output port and an input port. */
 export interface Route {

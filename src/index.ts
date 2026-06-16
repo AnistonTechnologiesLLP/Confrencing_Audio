@@ -1085,6 +1085,20 @@ export function setSpeakerTilt(config: SystemConfig, deviceId: string, tiltDeg: 
   return setAim(config, deviceId, { tiltDeg });
 }
 
+/**
+ * Set a microphone array's mounting bearing (compass heading of its 0° reference, 0° = +Y).
+ * Needed to map a detected array-relative azimuth into room coordinates for room-aware steering. v5.
+ * Returns a new config.
+ */
+export function setArrayBearing(config: SystemConfig, deviceId: string, bearingDeg: number): SystemConfig {
+  return mapDevice(config, deviceId, (d) => {
+    if (d.type !== 'microphoneArray') {
+      throw new Error(`Device ${deviceId} is not a microphone array (no bearing).`);
+    }
+    return { ...d, bearingDeg: wrapBearing(bearingDeg) };
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Furniture / room objects (v4)
 // ---------------------------------------------------------------------------

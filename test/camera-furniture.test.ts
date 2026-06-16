@@ -15,6 +15,10 @@ import {
   serialize,
   deserialize,
   isCamera,
+  addDevice,
+  createMicrophoneArray,
+  createCodec,
+  setArrayBearing,
   CONFIG_VERSION,
   getDeviceProfile,
   defaultProfileId,
@@ -158,13 +162,12 @@ describe('serialization', () => {
 // Migration / version gate
 // --------------------------------------------------------------------------- //
 describe('migration / version gate', () => {
-  it('v3 file loads as v4', () => {
+  it('v3 file migrates to current', () => {
     const c = createConfig({ name: 'Room', createdAt: 'x' });
     const doc = JSON.parse(serialize(c)) as Record<string, unknown>;
     doc.version = 3; // a genuine v3 file
     const restored = deserialize(JSON.stringify(doc));
-    expect(restored.version).toBe(CONFIG_VERSION);
-    expect(CONFIG_VERSION).toBe(4);
+    expect(restored.version).toBe(CONFIG_VERSION); // migrates the whole chain to current (v5)
     // additive: a v3 doc gains nothing, so re-bumping to v3 reproduces the original
     const up = JSON.parse(serialize(restored)) as Record<string, unknown>;
     up.version = 3;
@@ -187,8 +190,46 @@ describe('migration / version gate', () => {
       objects: [{ id: 'o1', kind: 'table', position: { x: 2, y: 2 } }],
     };
     const restored = deserialize(JSON.stringify(doc));
-    expect(restored.version).toBe(4);
+    expect(restored.version).toBe(CONFIG_VERSION);
     expect(restored.room!.objects[0]!.kind).toBe('table');
+  });
+});
+
+// --------------------------------------------------------------------------- //
+// Array bearing (v5) — mirror of Python tests/test_serialization.py
+// --------------------------------------------------------------------------- //
+describe('array bearing (v5)', () => {
+  it('round-trips with camelCase, omit-when-absent', () => {
+    let c = createConfig({ name: 'rt', createdAt: '2026-01-01T00:00:00Z' });
+    c = addDevice(c, createMicrophoneArray('A', 'Array', 'automatic'));
+    const d0 = JSON.parse(serialize(c)) as { devices: Array<Record<string, unknown>> };
+    const arr0 = d0.devices.find((x) => x.id === 'A')!;
+    expect('bearingDeg' in arr0).toBe(false); // omit-when-undefined (unaimed array)
+    c = setArrayBearing(c, 'A', 45.0);
+    const d1 = JSON.parse(serialize(c)) as { devices: Array<Record<string, unknown>>; version: number };
+    expect(d1.version).toBe(CONFIG_VERSION);
+    expect(CONFIG_VERSION).toBe(5);
+    const arr1 = d1.devices.find((x) => x.id === 'A')!;
+    expect(arr1.bearingDeg).toBe(45.0);
+    expect(serialize(deserialize(serialize(c)))).toBe(serialize(c)); // lossless round-trip
+  });
+
+  it('v4 file migrates to v5 losslessly', () => {
+    let c = createConfig({ name: 'm', createdAt: '2026-01-01T00:00:00Z' });
+    c = addDevice(c, createMicrophoneArray('A', 'Array', 'automatic'));
+    const doc = JSON.parse(serialize(c)) as Record<string, unknown>;
+    doc.version = 4; // a genuine v4 file: array carries no bearingDeg
+    const restored = deserialize(JSON.stringify(doc));
+    expect(restored.version).toBe(5);
+    const out = JSON.parse(serialize(restored)) as { devices: Array<Record<string, unknown>> };
+    const arr = out.devices.find((x) => x.id === 'A')!;
+    expect('bearingDeg' in arr).toBe(false); // additive migration adds nothing
+  });
+
+  it('setArrayBearing rejects a non-array device', () => {
+    let c = createConfig({ name: 'x', createdAt: '2026-01-01T00:00:00Z' });
+    c = addDevice(c, createCodec('C', 'Codec', 'dante'));
+    expect(() => setArrayBearing(c, 'C', 10.0)).toThrow(/not a microphone array/);
   });
 });
 

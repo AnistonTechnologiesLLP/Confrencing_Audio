@@ -54,6 +54,12 @@ export interface MicrophoneArray extends BaseDevice {
   zones: CoverageZone[];
   /** AEC reference assignment for this array's signal. */
   aec: AecConfig;
+  /**
+   * v5 — optional mounting bearing (compass heading of the array's 0° reference,
+   * 0° = +Y). Lets a detected array-relative azimuth be mapped into room
+   * coordinates (room-aware steering). `undefined` ⇒ orientation unspecified.
+   */
+  bearingDeg?: number;
 }
 
 /** A single-channel wireless source (e.g. presenter lavalier/handheld). */
