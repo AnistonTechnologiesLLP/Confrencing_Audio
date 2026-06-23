@@ -23,6 +23,62 @@ export function designReport(config: SystemConfig, fmt: 'markdown' | 'html' = 'm
 }
 
 // ---------------------------------------------------------------------------
+// Commissioning / as-built report (design report + measured live state)
+// ---------------------------------------------------------------------------
+
+/**
+ * Runtime / measured state captured during commissioning, layered onto the pure
+ * {@link SystemConfig} design report. Every field is optional — a report built
+ * from an empty `{}` is just the as-built config plus a sign-off checklist (the
+ * honest "we never went live" case). The GUI fills these from the running engine;
+ * the pure library never reads a clock or a device.
+ *
+ * `silentCapsules` is `undefined`/`null` when capsule health was never probed,
+ * `[]` when probed and all live, or the 1-based indices found silent. Latency is
+ * always framed as *estimated* (summed from stage constants, not measured).
+ */
+export interface CommissioningInfo {
+  site?: string;
+  commissionedBy?: string;
+  date?: string;
+  notes?: string;
+  listeningMode?: string;
+  /** Estimated end-to-end latency (ms); `null`/absent = not estimated. */
+  estimatedLatencyMs?: number | null;
+  /** Latency target (ms); defaults to 150. */
+  latencyTargetMs?: number;
+  activeCleaningStages?: string;
+  aecRefSource?: string;
+  /** AEC echo reduction (ERLE, dB); `null`/absent = not measured. */
+  aecErleDb?: number | null;
+  /** A/B proof: how much quieter the background got (dB). */
+  bedReductionDb?: number | null;
+  /** A/B proof: broadband level delta (dB). */
+  rmsReductionDb?: number | null;
+  /** Front calibration offset (deg). */
+  frontOffsetDeg?: number | null;
+  /** `undefined`/`null` = never probed; `[]` = all live; else 1-based silent indices. */
+  silentCapsules?: number[] | null;
+}
+
+/**
+ * An integrator deliverable: the as-built configuration plus the measured live
+ * state (estimated latency, AEC/ERLE, A/B noise-bed proof, capsule health, front
+ * calibration) and a derived pass/fail sign-off checklist. `fmt` is `'markdown'`
+ * (default) or `'html'`. Mirrors the Python engine's `commissioning_report`.
+ */
+export function commissioningReport(
+  config: SystemConfig,
+  info: CommissioningInfo = {},
+  fmt: 'markdown' | 'html' = 'markdown',
+): string {
+  const md = commissionMarkdown(config, info);
+  if (fmt === 'markdown') return md;
+  if (fmt === 'html') return mdToHtml(md);
+  throw new Error(`Unknown report format: ${String(fmt)} (expected 'markdown' or 'html').`);
+}
+
+// ---------------------------------------------------------------------------
 // Markdown sections
 // ---------------------------------------------------------------------------
 
@@ -46,21 +102,24 @@ function markdown(config: SystemConfig): string {
     .join('\n\n');
 }
 
-function roomSection(config: SystemConfig): string {
-  const name = config.metadata.name || 'Untitled';
-  const lines = [`# Design report — ${name}`, ''];
+function roomFacts(config: SystemConfig): string[] {
   const room = config.room;
   if (room && room.vertices.length > 0) {
     const xs = room.vertices.map((v) => v.x);
     const ys = room.vertices.map((v) => v.y);
     const w = Math.max(...xs) - Math.min(...xs);
     const d = Math.max(...ys) - Math.min(...ys);
-    lines.push(`- Room: ${w.toFixed(1)} × ${d.toFixed(1)} × ${room.height.toFixed(1)} m`);
-    lines.push(`- Estimated RT60: ${estimatedRt60(config).toFixed(2)} s`);
-  } else {
-    lines.push('- Room: not defined');
+    return [
+      `- Room: ${w.toFixed(1)} × ${d.toFixed(1)} × ${room.height.toFixed(1)} m`,
+      `- Estimated RT60: ${estimatedRt60(config).toFixed(2)} s`,
+    ];
   }
-  return lines.join('\n');
+  return ['- Room: not defined'];
+}
+
+function roomSection(config: SystemConfig): string {
+  const name = config.metadata.name || 'Untitled';
+  return [`# Design report — ${name}`, '', ...roomFacts(config)].join('\n');
 }
 
 function deviceSection(config: SystemConfig): string {
@@ -181,6 +240,146 @@ function validationSection(config: SystemConfig): string {
   }
   for (const e of res.errors) lines.push(`- ERROR [${e.code}] ${e.message}`);
   for (const w of res.warnings) lines.push(`- WARN [${w.code}] ${w.message}`);
+  return lines.join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// Commissioning-specific sections (reuse the design-report sections above)
+// ---------------------------------------------------------------------------
+
+function commissionMarkdown(config: SystemConfig, info: CommissioningInfo): string {
+  return [
+    commissionHeader(config, info),
+    commissionRoom(config),
+    deviceSection(config),
+    routingSection(config),
+    aecSection(config),
+    coverageSection(config),
+    coverageAreasSection(config),
+    controlSection(config),
+    commissionMeasurements(info),
+    commissionHealth(info),
+    validationSection(config),
+    commissionSignoff(config, info),
+  ]
+    .filter((s) => s)
+    .join('\n\n');
+}
+
+function commissionHeader(config: SystemConfig, info: CommissioningInfo): string {
+  const name = config.metadata.name || 'Untitled';
+  const lines = [`# Commissioning report — ${name}`, ''];
+  const rows: Array<[string, string]> = [
+    ['Site', info.site ?? ''],
+    ['Commissioned by', info.commissionedBy ?? ''],
+    ['Date', info.date ?? ''],
+  ];
+  for (const [label, val] of rows) lines.push(`- ${label}: ${val || '—'}`);
+  if (info.listeningMode) lines.push(`- Listening mode: ${info.listeningMode}`);
+  if (info.notes) lines.push(`- Notes: ${info.notes}`);
+  return lines.join('\n');
+}
+
+function commissionRoom(config: SystemConfig): string {
+  return ['## Room', ...roomFacts(config)].join('\n');
+}
+
+function commissionMeasurements(info: CommissioningInfo): string {
+  const lines: string[] = [];
+  const target = info.latencyTargetMs ?? 150;
+  if (info.estimatedLatencyMs != null) {
+    const within = info.estimatedLatencyMs <= target ? 'within' : 'ABOVE';
+    lines.push(
+      `- Estimated end-to-end latency: ~${info.estimatedLatencyMs.toFixed(0)} ms ` +
+        `(${within} the ≤ ${target.toFixed(0)} ms target)`,
+    );
+  }
+  if (info.activeCleaningStages) lines.push(`- Active cleaning: ${info.activeCleaningStages}`);
+  if (info.aecRefSource) lines.push(`- AEC reference source: ${info.aecRefSource}`);
+  if (info.aecErleDb != null) lines.push(`- AEC echo reduction (ERLE): ${info.aecErleDb.toFixed(1)} dB`);
+  if (info.bedReductionDb != null) {
+    lines.push(`- Background-noise reduction (A/B proof): ${info.bedReductionDb.toFixed(1)} dB quieter`);
+  }
+  if (info.rmsReductionDb != null) {
+    lines.push(`- Broadband level change (A/B proof): ${info.rmsReductionDb.toFixed(1)} dB`);
+  }
+  if (lines.length === 0) return '';
+  return ['## Live measurements', ...lines].join('\n');
+}
+
+function commissionHealth(info: CommissioningInfo): string {
+  const lines: string[] = [];
+  if (info.frontOffsetDeg != null) lines.push(`- Front calibration offset: ${signed(info.frontOffsetDeg, 0)}°`);
+  if (info.silentCapsules != null) {
+    lines.push(
+      info.silentCapsules.length > 0
+        ? '- Silent / disabled capsules: ' + info.silentCapsules.map((c) => String(c)).join(', ')
+        : '- Capsule health: all capsules active',
+    );
+  }
+  if (lines.length === 0) return '';
+  return ['## Health & calibration', ...lines].join('\n');
+}
+
+/**
+ * A derived pass/fail checklist — the integrator's at-a-glance acceptance view —
+ * plus a hand-signed form. Each check is computed from the config / validation /
+ * measured info, never assumed passing.
+ */
+function commissionSignoff(config: SystemConfig, info: CommissioningInfo): string {
+  const res = validate(config);
+  const mics = config.devices.filter(isMicDevice);
+  const checks: Array<[boolean, string]> = [
+    [config.room != null && config.room.vertices.length > 0, 'Room geometry defined'],
+    [mics.length > 0, 'At least one microphone / array present'],
+  ];
+  if (config.talkers.length > 0) {
+    const rep = coverageReport(config);
+    checks.push([
+      rep.uncovered.length === 0,
+      `All talkers within coverage (${rep.covered.length}/${config.talkers.length})`,
+    ]);
+  }
+  const aecMics = mics.filter((m) => m.aec.enabled);
+  if (aecMics.length > 0) {
+    checks.push([
+      aecMics.every((m) => Boolean(m.aec.referenceBusId)),
+      'AEC reference assigned for every echo-cancelling mic',
+    ]);
+  }
+  checks.push([
+    res.errors.length === 0,
+    `No configuration errors (${res.errors.length} error(s), ${res.warnings.length} warning(s))`,
+  ]);
+  if (info.estimatedLatencyMs != null) {
+    const target = info.latencyTargetMs ?? 150;
+    checks.push([
+      info.estimatedLatencyMs <= target,
+      `Estimated latency within target (~${info.estimatedLatencyMs.toFixed(0)} ms ≤ ${target.toFixed(0)} ms)`,
+    ]);
+  }
+  if (info.bedReductionDb != null) {
+    checks.push([
+      info.bedReductionDb > 0,
+      `Noise reduction verified by A/B proof (${info.bedReductionDb.toFixed(1)} dB quieter)`,
+    ]);
+  }
+  if (info.silentCapsules != null) {
+    checks.push([info.silentCapsules.length === 0, 'All capsules active (no silent capsules)']);
+  }
+
+  const passed = checks.filter(([ok]) => ok).length;
+  const lines = ['## Commissioning sign-off', ''];
+  for (const [ok, label] of checks) lines.push(`- [${ok ? 'x' : ' '}] ${label}`);
+  lines.push('', `Checks passing: ${passed}/${checks.length}.`, '');
+  lines.push(
+    '| Field | |',
+    '| --- | --- |',
+    `| Commissioned by | ${info.commissionedBy || '________________'} |`,
+    '| Signature | ________________ |',
+    `| Date | ${info.date || '________________'} |`,
+    '| Customer sign-off | ________________ |',
+  );
   return lines.join('\n');
 }
 

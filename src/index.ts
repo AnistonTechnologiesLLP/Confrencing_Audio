@@ -127,7 +127,7 @@ export * from './coverage/check.js';
 // --- v4: furniture catalog + room/device coverage simulation (cameras/mics/speakers) ---
 export * from './furniture/furniture.js';
 export * from './coverage-sim/coverage-sim.js';
-export { designReport } from './report/report.js';
+export { designReport, commissioningReport, type CommissioningInfo } from './report/report.js';
 export {
   scorePlacement,
   estimatedRt60,
