@@ -108,6 +108,80 @@ describe('deserialize normalization (Python parity)', () => {
     expect(restored.room!.background!.origin).toEqual({ x: 0, y: 0 });
   });
 
+  it('defaults an absent background.opacity to 0.5', () => {
+    const obj = baseObj();
+    obj.room = {
+      vertices: [
+        { x: 0, y: 0 },
+        { x: 4, y: 0 },
+        { x: 4, y: 4 },
+        { x: 0, y: 4 },
+      ],
+      height: 3,
+      units: 'meters',
+      objects: [],
+      background: { path: 'plan.png', imageWidthPx: 100, imageHeightPx: 50, origin: { x: 0, y: 0 } }, // no `opacity`
+    };
+    const restored = deserialize(JSON.stringify(obj));
+    expect(restored.room!.background!.opacity).toBe(0.5);
+  });
+
+  it('defaults an absent scene steer offNadirDeg to 90 (horizontal)', () => {
+    const obj = baseObj();
+    obj.control = {
+      muteGroups: [],
+      scenes: [
+        {
+          id: 'sc1',
+          label: 'Scene 1',
+          muteStates: {},
+          zoneStates: [],
+          steer: [{ arrayId: 'A', azimuthDeg: 45 }], // no `offNadirDeg`
+        },
+      ],
+      schedules: [],
+    };
+    const restored = deserialize(JSON.stringify(obj));
+    expect(restored.control!.scenes[0]!.steer[0]!.offNadirDeg).toBe(90);
+  });
+
+  it('defaults a scene\'s absent muteStates/zoneStates/steer to empty', () => {
+    const obj = baseObj();
+    obj.control = { muteGroups: [], scenes: [{ id: 'sc1', label: 'Scene 1' }], schedules: [] };
+    const restored = deserialize(JSON.stringify(obj));
+    const scene = restored.control!.scenes[0]!;
+    expect(scene.muteStates).toEqual({});
+    expect(scene.zoneStates).toEqual([]);
+    expect(scene.steer).toEqual([]);
+  });
+
+  it('defaults a mute group\'s absent deviceIds/zoneRefs/trigger/muted', () => {
+    const obj = baseObj();
+    obj.control = { muteGroups: [{ id: 'g1', label: 'Group 1' }], scenes: [], schedules: [] };
+    const restored = deserialize(JSON.stringify(obj));
+    const group = restored.control!.muteGroups[0]!;
+    expect(group.deviceIds).toEqual([]);
+    expect(group.zoneRefs).toEqual([]);
+    expect(group.trigger).toBe('software');
+    expect(group.muted).toBe(false);
+  });
+
+  it('defaults an absent room.units to "meters" and room.objects to []', () => {
+    const obj = baseObj();
+    obj.room = {
+      vertices: [
+        { x: 0, y: 0 },
+        { x: 4, y: 0 },
+        { x: 4, y: 4 },
+        { x: 0, y: 4 },
+      ],
+      height: 3,
+    }; // no `units`, no `objects`
+    const restored = deserialize(JSON.stringify(obj));
+    expect(restored.room!.units).toBe('meters');
+    expect(restored.room!.objects).toEqual([]);
+  });
+
   it('leaves present schedule/background fields untouched', () => {
     const obj = baseObj();
     obj.control = {

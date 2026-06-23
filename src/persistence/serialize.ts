@@ -74,22 +74,39 @@ export function deserialize(json: string): SystemConfig {
     if (!Array.isArray(c.muteGroups)) c.muteGroups = [];
     if (!Array.isArray(c.scenes)) c.scenes = [];
     if (!Array.isArray(c.schedules)) c.schedules = [];
-    // A schedule's `enabled`/`days` are required by the model, but a hand-edited
-    // or partial document may omit them — default them (mirrors the Python
-    // dataclass defaults: `enabled=True`, `days=` every weekday).
-    for (const s of c.schedules as Array<Record<string, unknown>>) {
-      if (typeof s.enabled !== 'boolean') s.enabled = true;
-      if (!Array.isArray(s.days)) s.days = [...WEEKDAYS];
+    // Mute groups, scenes, and schedules carry fields the model treats as
+    // required; a hand-edited or partial document may omit them, so default them
+    // exactly as the Python `_mute_group`/`_scene`/`_schedule` loaders do.
+    for (const g of c.muteGroups as Array<Record<string, unknown>>) {
+      if (!Array.isArray(g.deviceIds)) g.deviceIds = [];
+      if (!Array.isArray(g.zoneRefs)) g.zoneRefs = [];
+      if (typeof g.trigger !== 'string') g.trigger = 'software';
+      if (typeof g.muted !== 'boolean') g.muted = false;
+    }
+    for (const scene of c.scenes as Array<Record<string, unknown>>) {
+      if (scene.muteStates === null || typeof scene.muteStates !== 'object') scene.muteStates = {};
+      if (!Array.isArray(scene.zoneStates)) scene.zoneStates = [];
+      if (!Array.isArray(scene.steer)) scene.steer = [];
+      for (const st of scene.steer as Array<Record<string, unknown>>) {
+        if (typeof st.offNadirDeg !== 'number') st.offNadirDeg = 90; // horizontal
+      }
+    }
+    for (const sched of c.schedules as Array<Record<string, unknown>>) {
+      if (typeof sched.enabled !== 'boolean') sched.enabled = true;
+      if (!Array.isArray(sched.days)) sched.days = [...WEEKDAYS];
     }
   }
-  // Normalize the floor-plan background: a hand-edited background may omit
-  // `origin` (the model requires it; the API defaults it to the world origin), so
-  // default it here too (mirrors the Python `_bg` default of `Point2D(0, 0)`).
+  // Normalize the room: `units`/`objects` and a floor-plan background's
+  // `origin`/`opacity` are required by the model but may be omitted by a
+  // hand-edited document — default them as the Python `_room`/`_bg` loaders do.
   if (obj.room !== null && typeof obj.room === 'object') {
     const room = obj.room as Record<string, unknown>;
+    if (typeof room.units !== 'string') room.units = 'meters';
+    if (!Array.isArray(room.objects)) room.objects = [];
     if (room.background !== null && typeof room.background === 'object') {
       const bg = room.background as Record<string, unknown>;
       if (bg.origin === null || typeof bg.origin !== 'object') bg.origin = { x: 0, y: 0 };
+      if (typeof bg.opacity !== 'number') bg.opacity = 0.5;
     }
   }
   // Normalize camera pose: a hand-edited camera may omit bearing/tilt; the model
