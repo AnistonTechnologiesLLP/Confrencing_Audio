@@ -504,6 +504,33 @@ engine's `conf_pipeline/seat_mapper.py`.
 import { setArrayBearing, nearestSeatForArray, seatAzimuthForArray } from 'conferencing-audio-pipeline';
 ```
 
+## Live audio (Phase 1, Node)
+
+A real-time **fractional-delay-and-sum** beamformer over a pluggable capture adapter. The core
+(`conferencing-audio-pipeline/live`) is pure, zero-dependency, and browser-safe; the real 8-capsule
+POLARIS capture path is a **Node-only** backend (`conferencing-audio-pipeline/live-node`) built on the
+optional native addon `naudiodon2`.
+
+```ts
+import { LiveEngine } from 'conferencing-audio-pipeline/live';
+import { NodeCaptureAdapter, NodeOutputSink } from 'conferencing-audio-pipeline/live-node';
+import { sensibel8 } from 'conferencing-audio-pipeline'; // beamformer.sensibel8
+
+const geom = sensibel8(0.04);                    // your array's real radius (m)
+const engine = new LiveEngine(new NodeCaptureAdapter(), {
+  geom, deviceName: 'SB-POLARIS', sampleRate: 44100, azimuthDeg: 0,
+});
+const sink = new NodeOutputSink();
+await sink.start(44100);
+engine.onOutput((o) => sink.write(o.mono));      // hear the steered beam; o.rmsDb / o.clipped for metering
+await engine.start();
+```
+
+> The browser cannot capture 8 discrete USB channels (`getUserMedia` downmixes to stereo), so the
+> live 8-channel path is Node-only. A browser/Web-Audio adapter, live DOA/auto-steer, and the cleaning
+> chain are deferred to later phases. `naudiodon2` is an **optional peer dependency** — install it
+> (with a C++ toolchain) only to use `./live-node`.
+
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md) for the version history.
