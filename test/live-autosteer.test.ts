@@ -30,4 +30,10 @@ describe('AutoSteerController', () => {
     expect(c.decide(doa([10, 200])).lookAzimuthDeg).toBe(137);
     expect(c.decide(doa([], false)).lookAzimuthDeg).toBeNull(); // already there → deadband
   });
+
+  it('follow: picks the higher-salience in-sector detection', () => {
+    const c = new AutoSteerController({ mode: 'follow', sector: { centerDeg: 0, halfWidthDeg: 90 } });
+    const r: DoaResult = { detections: [{ azimuthDeg: 10, salienceDb: 4 }, { azimuthDeg: 60, salienceDb: 12 }], gridDeg: [], powerDb: [], active: true };
+    expect(c.decide(r).lookAzimuthDeg).toBe(60); // higher salience wins, both in sector
+  });
 });

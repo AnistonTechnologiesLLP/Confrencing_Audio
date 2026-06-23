@@ -43,5 +43,12 @@ describe('FftRadix2.rfft', () => {
       if (mag > peak) { peak = mag; peakBin = k; }
     }
     expect(peakBin).toBe(k0);
+    // Parseval for a real-input rfft: |X0|² + 2·Σ_{k=1..N/2-1}|Xk|² + |X_{N/2}|² == N·Σ x²
+    let specEnergy = X.re[0]! * X.re[0]! + X.im[0]! * X.im[0]!;
+    for (let k = 1; k < n / 2; k++) specEnergy += 2 * (X.re[k]! * X.re[k]! + X.im[k]! * X.im[k]!);
+    specEnergy += X.re[n / 2]! * X.re[n / 2]! + X.im[n / 2]! * X.im[n / 2]!;
+    let timeEnergy = 0;
+    for (let i = 0; i < n; i++) timeEnergy += x[i]! * x[i]!;
+    expect(specEnergy).toBeCloseTo(n * timeEnergy, 6);
   });
 });

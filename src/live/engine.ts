@@ -6,7 +6,7 @@ import type { CaptureAdapter, LiveConfig, BeamOutput, AutoSteerMode } from './ty
 import { StreamingDelaySumBeam } from './beam.js';
 import { LevelMeter } from './meter.js';
 import { StreamingCovarianceAccumulator } from './covariance.js';
-import { detect, type DoaResult } from './doa.js';
+import { detect, type DoaResult, type DetectOptions } from './doa.js';
 import { AutoSteerController, type AutoSteerOptions } from './autosteer.js';
 import { seatAzimuthForArray } from '../seat-mapper/seat-mapper.js';
 
@@ -22,7 +22,7 @@ export class LiveEngine {
   private autosteer: AutoSteerController | null = null;
   private detectionHops = 11;
   private lastFrames = 0;
-  private doaOpts: import('./doa.js').DetectOptions = {};
+  private doaOpts: DetectOptions = {};
   private _mode: AutoSteerMode | undefined = 'manual';
   private _lockedTarget: { azimuthDeg: number; seatId?: string } | null = null;
   private lastDoa: DoaResult | null = null;
@@ -111,10 +111,16 @@ export class LiveEngine {
           clipped: this.meter.clipped,
           azimuthDeg: this._azimuthDeg,
           offNadirDeg: this._offNadirDeg,
-          detected: this.lastDoa ? { azimuths: this.lastDoa.detections.map((d) => d.azimuthDeg), salienceDb: this.lastDoa.detections.map((d) => d.salienceDb) } : null,
-          doaActive: this.lastDoa ? this.lastDoa.active : false,
-          ...(this._mode !== undefined ? { mode: this._mode } : {}),
-          lockedTarget: this._lockedTarget,
+          ...(this.cov
+            ? {
+                detected: this.lastDoa
+                  ? { azimuths: this.lastDoa.detections.map((d) => d.azimuthDeg), salienceDb: this.lastDoa.detections.map((d) => d.salienceDb) }
+                  : null,
+                doaActive: this.lastDoa ? this.lastDoa.active : false,
+                mode: this._mode as AutoSteerMode,
+                lockedTarget: this._lockedTarget,
+              }
+            : {}),
         });
       },
     });
