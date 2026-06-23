@@ -25,7 +25,7 @@ cross-project schema-parity constraint at the end — it is a hard invariant, no
 
 ```bash
 npm install
-npm test                        # vitest run (335 tests across 29 files)
+npm test                        # vitest run (394 tests across 34 files)
 npm run test:watch              # vitest (watch)
 npx vitest run test/aec.test.ts # one test FILE
 npx vitest run -t "self-reference"   # one test by NAME (substring)
@@ -93,11 +93,12 @@ Key structural facts that span files:
   runs `migrateV1ToV2 → … → migrateV4ToV5`; **each step is lossless, additive, omit-when-absent, and bumps
   exactly one version.** `CONFIG_VERSION` lives in [src/model/config.ts](src/model/config.ts) (currently 5).
 
-- **Beamformer is the only DSP, and it is offline design math.** The `beamformer` namespace
+- **The offline beamformer is pure design math.** The `beamformer` namespace
   ([src/beamformer/](src/beamformer/)) is pure-stdlib complex-number math for a real array (geometry like
   `sensibel8`, zone→steering, delay-and-sum / superdirective / LCMV weights, DI/WNG/lobe analysis, octave-band
-  verification). It *designs and verifies* beam patterns; it does not capture or stream. The **live** capture /
-  DOA / OCTOVOX layers are intentionally Python-only (they need numpy/sounddevice) and are not ported here.
+  verification). It *designs and verifies* beam patterns; it does not capture or stream — real-time capture +
+  beamforming is the separate **live layer** (next bullet). The **DOA / auto-steer / cleaning / OCTOVOX**
+  layers remain Python-only (numpy/sounddevice) and are not ported here.
   Likewise `recommendPlacement`/`scoreHeatmap` ([src/sim/](src/sim/)) are heuristic and numpy-free;
   `validateRecommendation` simply reports that no numerical-physics backend is installed.
 
