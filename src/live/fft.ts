@@ -42,12 +42,15 @@ export class FftRadix2 {
     this.outIm = new Float64Array(n / 2 + 1);
   }
 
-  /** Forward FFT of a real frame (length n) → first n/2+1 bins (reused buffers). */
-  rfft(frame: Float64Array): { re: Float64Array; im: Float64Array } {
+  /** In-place complex forward FFT on the work buffers re[]/im[] (length n). */
+  private fftInPlace(): void {
     const { n, rev, re, im, cos, sin } = this;
     for (let i = 0; i < n; i++) {
-      re[rev[i]!] = frame[i]!;
-      im[rev[i]!] = 0;
+      const r = rev[i]!;
+      if (r > i) {
+        const tr = re[i]!; re[i] = re[r]!; re[r] = tr;
+        const ti = im[i]!; im[i] = im[r]!; im[r] = ti;
+      }
     }
     for (let len = 2; len <= n; len <<= 1) {
       const half = len >> 1;
@@ -70,12 +73,36 @@ export class FftRadix2 {
         }
       }
     }
-    const { outRe, outIm } = this;
-    for (let k = 0; k <= n / 2; k++) {
-      outRe[k] = re[k]!;
-      outIm[k] = im[k]!;
-    }
+  }
+
+  /** Forward FFT of a real frame (length n) → first n/2+1 bins (reused buffers). */
+  rfft(frame: Float64Array): { re: Float64Array; im: Float64Array } {
+    const { n, re, im, outRe, outIm } = this;
+    for (let i = 0; i < n; i++) { re[i] = frame[i]!; im[i] = 0; }
+    this.fftInPlace();
+    for (let k = 0; k <= n / 2; k++) { outRe[k] = re[k]!; outIm[k] = im[k]!; }
     return { re: outRe, im: outIm };
+  }
+
+  /**
+   * Inverse real FFT: the n/2+1 half-spectrum (`re`/`im`) → the length-n real
+   * signal. Uses ifft(X) = conj(fft(conj(X)))/n: rebuild the conjugate-symmetric
+   * full spectrum, conjugate it, forward-FFT, take the real part / n. Returns a
+   * freshly-allocated Float64Array of length n.
+   */
+  irfft(reHalf: Float64Array, imHalf: Float64Array): Float64Array {
+    const { n, re, im } = this;
+    // Build Y = conj(full spectrum X). For a real signal X[n-k] = conj(X[k]).
+    re[0] = reHalf[0]!; im[0] = -imHalf[0]!;
+    re[n / 2] = reHalf[n / 2]!; im[n / 2] = -imHalf[n / 2]!;
+    for (let k = 1; k < n / 2; k++) {
+      re[k] = reHalf[k]!; im[k] = -imHalf[k]!;        // Y[k] = conj(X[k])
+      re[n - k] = reHalf[k]!; im[n - k] = imHalf[k]!;  // Y[n-k] = conj(X[n-k]) = conj(conj(X[k]))... = (reHalf[k], +imHalf[k])
+    }
+    this.fftInPlace();
+    const out = new Float64Array(n);
+    for (let i = 0; i < n; i++) out[i] = re[i]! / n; // real part of conj(Z)/n = Z_re/n
+    return out;
   }
 }
 
