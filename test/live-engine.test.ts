@@ -3,6 +3,7 @@ import { MockCaptureAdapter } from '../src/live/mock-adapter.js';
 import { StreamingDelaySumBeam } from '../src/live/beam.js';
 import { LiveEngine } from '../src/live/engine.js';
 import { sensibel8 } from '../src/beamformer/geometry.js';
+import * as live from '../src/live/index.js';
 
 function rms(x: Float32Array): number {
   let s = 0;
@@ -71,5 +72,15 @@ describe('LiveEngine', () => {
     engine.setLook(90);
     await engine.start(); // now steered at the source → high
     expect(r).toBeGreaterThan(low * 1.5);
+  });
+});
+
+describe('live barrel', () => {
+  it('exports the public surface', () => {
+    expect(typeof live.LiveEngine).toBe('function');
+    expect(typeof live.MockCaptureAdapter).toBe('function');
+    expect(typeof live.StreamingDelaySumBeam).toBe('function');
+    expect(typeof live.LevelMeter).toBe('function');
+    expect(typeof live.directionUnit).toBe('function');
   });
 });
