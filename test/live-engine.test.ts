@@ -84,3 +84,34 @@ describe('live barrel', () => {
     expect(typeof live.directionUnit).toBe('function');
   });
 });
+
+describe('LiveEngine auto-steer', () => {
+  it('follow mode re-aims the beam toward a synthetic source', async () => {
+    const geom = sensibel8(0.04);
+    const mock = new MockCaptureAdapter({ channels: 8, azimuthDeg: 90, blocks: 30, blockSize: 512, freqHz: 1500 });
+    const engine = new LiveEngine(mock, {
+      geom, deviceName: 'MOCK-8', sampleRate: 44100, azimuthDeg: 0, // start pointed away
+      autoSteer: { mode: 'follow', sector: { centerDeg: 90, halfWidthDeg: 60 }, detectionHops: 2 },
+    });
+    let last: number | undefined;
+    let detectedSeen = false;
+    engine.onOutput((o) => {
+      last = o.azimuthDeg;
+      if (o.detected && o.detected.azimuths.length > 0) detectedSeen = true;
+    });
+    await engine.start();
+    expect(detectedSeen).toBe(true);
+    // the beam ended up aimed near the 90° source (within a grid step or two)
+    expect(Math.min(Math.abs((last ?? 0) - 90), 360 - Math.abs((last ?? 0) - 90))).toBeLessThanOrEqual(6);
+  });
+
+  it('manual mode leaves the beam static (no DOA steering)', async () => {
+    const geom = sensibel8(0.04);
+    const mock = new MockCaptureAdapter({ channels: 8, azimuthDeg: 90, blocks: 10, blockSize: 512, freqHz: 1500 });
+    const engine = new LiveEngine(mock, { geom, deviceName: 'MOCK-8', sampleRate: 44100, azimuthDeg: 0 });
+    let last = -1;
+    engine.onOutput((o) => { last = o.azimuthDeg; });
+    await engine.start();
+    expect(last).toBe(0); // unchanged
+  });
+});
