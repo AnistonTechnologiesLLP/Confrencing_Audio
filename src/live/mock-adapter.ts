@@ -69,7 +69,7 @@ export class MockCaptureAdapter implements CaptureAdapter {
       const block = planeWaveChannels(
         this.geom, this.azimuthDeg, this.offNadirDeg, this.freqHz, opts.sampleRate, this.blockSize,
       );
-      opts.onBlock(block as Float32Array[], opts.sampleRate);
+      opts.onBlock(block, opts.sampleRate);
     }
     return Promise.resolve();
   }

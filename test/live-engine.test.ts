@@ -22,7 +22,7 @@ describe('MockCaptureAdapter', () => {
       sampleRate: 44100,
       onBlock: (channels) => {
         seen.push(channels.length);
-        expect((channels as ArrayLike<any>[])[0]!.length).toBe(256);
+        expect(channels[0]!.length).toBe(256);
       },
     });
     expect(seen).toEqual([8, 8, 8]); // 3 blocks, 8 channels each
@@ -32,13 +32,13 @@ describe('MockCaptureAdapter', () => {
     const geom = sensibel8(0.04);
     const mock = new MockCaptureAdapter({ channels: 8, azimuthDeg: 90, blocks: 1, blockSize: 4096, freqHz: 1500 });
     const beam = new StreamingDelaySumBeam(geom, 44100);
-    let aligned: Float32Array | Float32Array<ArrayBufferLike> = new Float32Array(0);
-    let away: Float32Array | Float32Array<ArrayBufferLike> = new Float32Array(0);
+    let aligned: Float32Array = new Float32Array(0);
+    let away: Float32Array = new Float32Array(0);
     await mock.start({
       deviceName: 'MOCK-8', channels: 8, sampleRate: 44100,
       onBlock: (channels) => {
-        beam.setLook(90, 90); aligned = beam.process(channels as Float32Array[]) as Float32Array;
-        beam.reset(); beam.setLook(270, 90); away = beam.process(channels as Float32Array[]) as Float32Array;
+        beam.setLook(90, 90); aligned = beam.process(channels);
+        beam.reset(); beam.setLook(270, 90); away = beam.process(channels);
       },
     });
     expect(rms(aligned.subarray(64))).toBeGreaterThan(rms(away.subarray(64)) * 1.5);
