@@ -67,3 +67,107 @@ export function steerRealDelays(
   const delays = projs.map((p) => ((p - pmin) / speedOfSound) * sampleRate);
   return { idx, delays };
 }
+
+/** NumPy `convolve(a, k, 'valid')`: out[i] = Σ_t a[i+t]·k[L-1-t], length = a.length-L+1. */
+function convolveValid(a: Float64Array, k: Float64Array): Float64Array {
+  const L = k.length;
+  const out = new Float64Array(a.length - L + 1);
+  for (let i = 0; i < out.length; i++) {
+    let s = 0;
+    for (let t = 0; t < L; t++) s += a[i + t]! * k[L - 1 - t]!;
+    out[i] = s;
+  }
+  return out;
+}
+
+/**
+ * Streaming delay-and-sum with sub-sample (fractional) steer delays. Each active
+ * capsule's real delay splits into an integer part (read from a per-channel
+ * history ring) + a fractional remainder (a Hann-sinc FIR), continuous across
+ * block boundaries via a per-channel FIR tail. Port of `_FracDelaySumBeam`.
+ */
+export class StreamingDelaySumBeam {
+  private readonly geom: ArrayGeometry;
+  private readonly fs: number;
+  private readonly c: number;
+  private readonly L: number; // FIR length (odd, ≥5)
+  private idx: number[] = [];
+  private delaysInt: number[] = [];
+  private kernels: Float64Array[] = [];
+  private maxd = 0;
+  private hist: Float64Array[] = []; // per active capsule, length maxd
+  private tail: Float64Array[] = []; // per active capsule, length L-1
+
+  constructor(
+    geom: ArrayGeometry,
+    sampleRate: number,
+    opts: { speedOfSound?: number; taps?: number } = {},
+  ) {
+    this.geom = geom;
+    this.fs = sampleRate;
+    this.c = opts.speedOfSound ?? SOUND_SPEED_MPS;
+    this.L = Math.max(5, Math.trunc(opts.taps ?? DEFAULT_FRACDELAY_TAPS) | 1);
+    this.setLook(0, 90);
+  }
+
+  /** Re-aim the beam. Recomputes integer delays + fractional FIRs and resets history. */
+  setLook(azimuthDeg: number, offNadirDeg = 90): void {
+    const { idx, delays } = steerRealDelays(this.geom, azimuthDeg, offNadirDeg, this.fs, this.c);
+    const di = delays.map((d) => Math.floor(d));
+    const fr = delays.map((d, i) => d - di[i]!);
+    this.idx = idx;
+    this.delaysInt = di;
+    this.kernels = fr.map((f) => fracDelayKernel(f, this.L));
+    this.maxd = di.length > 0 ? Math.max(...di) : 0;
+    this.reset();
+  }
+
+  /** Drop all history (call on mode/look change to avoid stale samples). */
+  reset(): void {
+    const L1 = this.L - 1;
+    this.hist = this.idx.map(() => new Float64Array(this.maxd));
+    this.tail = this.idx.map(() => new Float64Array(L1));
+  }
+
+  /** One block in (per-channel Float32Arrays, length n), mono out (length n). */
+  process(channels: Float32Array[]): Float32Array {
+    const n = channels.length > 0 ? (channels[this.idx[0] ?? 0]?.length ?? 0) : 0;
+    const D = this.maxd;
+    const L1 = this.L - 1;
+    const out = new Float64Array(n);
+    for (let k = 0; k < this.idx.length; k++) {
+      const m = this.idx[k]!;
+      const d = this.delaysInt[k]!;
+      const ker = this.kernels[k]!;
+      const histM = this.hist[k]!;
+      const ch = channels[m]!;
+      // ext = [hist (D) | block (n)]; aligned = ext[D-d : D-d+n]
+      const start = D - d;
+      const aligned = new Float64Array(n);
+      for (let i = 0; i < n; i++) {
+        const j = start + i;
+        aligned[i] = j < D ? histM[j]! : ch[j - D]!;
+      }
+      // col = [tail (L1) | aligned (n)]; out += convolveValid(col, ker)
+      const col = new Float64Array(L1 + n);
+      col.set(this.tail[k]!, 0);
+      col.set(aligned, L1);
+      const conv = convolveValid(col, ker);
+      for (let i = 0; i < n; i++) out[i]! += conv[i]!;
+      // carry: new tail = last L1 samples of col; new hist = last D of ext
+      this.tail[k] = col.slice(col.length - L1);
+      if (D > 0) {
+        const newHist = new Float64Array(D);
+        for (let i = 0; i < D; i++) {
+          const j = n - D + i; // index into block tail (when n >= D)
+          newHist[i] = j >= 0 ? ch[j]! : histM[D + j]!;
+        }
+        this.hist[k] = newHist;
+      }
+    }
+    const denom = Math.max(1, this.idx.length);
+    const mono = new Float32Array(n);
+    for (let i = 0; i < n; i++) mono[i] = out[i]! / denom;
+    return mono;
+  }
+}

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { directionUnit, fracDelayKernel, steerRealDelays } from '../src/live/beam.js';
+import { directionUnit, fracDelayKernel, steerRealDelays, StreamingDelaySumBeam } from '../src/live/beam.js';
 import { sensibel8, SOUND_SPEED_MPS } from '../src/beamformer/geometry.js';
 
 describe('directionUnit', () => {
@@ -53,5 +53,69 @@ describe('steerRealDelays', () => {
     for (const m of idx) if (geom.elements[m]![1] > maxY) { maxY = geom.elements[m]![1]; maxYIdx = m; }
     const maxYDelay = delays[idx.indexOf(maxYIdx)]!;
     expect(maxYDelay).toBeCloseTo(Math.max(...delays), 9);
+  });
+});
+
+/** Build M channels carrying a sinusoid arriving as a plane wave from `(az, off)`. */
+function planeWave(
+  geom: ReturnType<typeof sensibel8>,
+  azimuthDeg: number,
+  offNadirDeg: number,
+  freqHz: number,
+  fs: number,
+  n: number,
+): Float32Array[] {
+  const { idx, delays } = steerRealDelays(geom, azimuthDeg, offNadirDeg, fs, SOUND_SPEED_MPS);
+  // arrival_m = (max delay - delay_m): capsule nearest source (max delay) arrives first.
+  const maxD = Math.max(...delays);
+  const channels: Float32Array[] = Array.from({ length: geom.nChannels }, () => new Float32Array(n));
+  idx.forEach((m, k) => {
+    const arrival = maxD - delays[k]!;
+    const ch = channels[m]!;
+    for (let i = 0; i < n; i++) ch[i] = Math.sin((2 * Math.PI * freqHz * (i - arrival)) / fs);
+  });
+  return channels;
+}
+
+function rms(x: Float32Array): number {
+  let s = 0;
+  for (const v of x) s += v * v;
+  return Math.sqrt(s / x.length);
+}
+
+describe('StreamingDelaySumBeam', () => {
+  it('reinforces a source it is steered at and attenuates one it is steered away from', () => {
+    const fs = 44100, n = 4096, geom = sensibel8(0.04);
+    const channels = planeWave(geom, 0, 90, 1500, fs, n); // source due north
+    const beam = new StreamingDelaySumBeam(geom, fs);
+
+    beam.setLook(0, 90); // steer at the source
+    const aligned = beam.process(channels);
+
+    beam.reset();
+    beam.setLook(180, 90); // steer at the opposite bearing
+    const away = beam.process(channels);
+
+    // skip the kernel/ring warm-up region when measuring energy
+    const tail = (x: Float32Array) => x.subarray(64);
+    expect(rms(tail(aligned))).toBeGreaterThan(rms(tail(away)) * 1.5);
+  });
+
+  it('is sample-exact across block boundaries (streaming == whole)', () => {
+    const fs = 44100, n = 2048, geom = sensibel8(0.04);
+    const channels = planeWave(geom, 45, 90, 1000, fs, n);
+
+    const whole = new StreamingDelaySumBeam(geom, fs);
+    whole.setLook(45, 90);
+    const a = whole.process(channels);
+
+    const split = new StreamingDelaySumBeam(geom, fs);
+    split.setLook(45, 90);
+    const half = n / 2;
+    const b1 = split.process(channels.map((c) => c.subarray(0, half)));
+    const b2 = split.process(channels.map((c) => c.subarray(half)));
+
+    for (let i = 0; i < half; i++) expect(b1[i]!).toBeCloseTo(a[i]!, 6);
+    for (let i = 0; i < half; i++) expect(b2[i]!).toBeCloseTo(a[half + i]!, 6);
   });
 });
