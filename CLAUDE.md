@@ -109,6 +109,14 @@ Key structural facts that span files:
   the live beam aligns capsules by geometric delay. Browser 8-ch capture is infeasible (getUserMedia
   downmixes to stereo) — the live path is Node-only. Tests are hardware-free via `MockCaptureAdapter`.
 
+- **Live steering (Phase 2, `src/live/{fft,covariance,doa,tracker,autosteer}.ts`).** SRP-PHAT DOA
+  over a 2° azimuth grid (band 300–3800 Hz), fed by a built-in radix-2 `rfft` + a streaming
+  spatial-covariance accumulator, drives a wrap-aware hold/switch tracker that re-aims the single
+  delay-sum beam at the dominant in-sector talker (or a locked seat). Opt-in via `LiveConfig.autoSteer`
+  (default `manual` = Phase-1 unchanged); still zero-dep (the FFT is pure TS). Azimuth-only (off-nadir
+  90°; a planar ring can't resolve above/below the plane); multi-talker/nulling is a later
+  frequency-domain phase.
+
 ## Conventions
 
 - **Relative imports carry a `.js` extension** even though sources are `.ts` (ESM resolution). Match this —

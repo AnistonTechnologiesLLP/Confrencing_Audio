@@ -19,6 +19,14 @@ The JSON **config schema** is versioned independently via `CONFIG_VERSION`
   from the Python engine's `_FracDelaySumBeam`). The browser can't capture 8 discrete USB channels, so
   the live path is Node-only; DOA/steering and the cleaning chain are later phases. Zero hard runtime
   deps unchanged.
+- **Live steering (Phase 2)** — the live engine steers itself. A pure, zero-dependency SRP-PHAT
+  direction-of-arrival (`doa.ts`, fed by a built-in radix-2 `rfft` in `fft.ts` + a streaming
+  spatial-covariance accumulator in `covariance.ts`) drives a wrap-aware hold/switch tracker
+  (`tracker.ts`) and a single-beam auto-steer controller (`autosteer.ts`), wired into `LiveEngine`
+  behind `LiveConfig.autoSteer` (`mode: 'manual' | 'follow' | 'lockSeat'`; default `manual` =
+  Phase-1 behavior). `BeamOutput` gains `detected`/`doaActive`/`mode`/`lockedTarget`. Lock-to-seat
+  reuses the seat-mapper. Azimuth-only (off-nadir 90°), band 300–3800 Hz, single-talker follow; the
+  FFT adds no dependency. Ported from the Python engine's `doa`/`autosteer`/`tracking`.
 - **Microphone-array mounting bearing** (schema **v4 → v5**) — `MicrophoneArray` gains
   an optional `bearingDeg` (compass heading of the array's 0° reference, 0° = +Y), so a
   detected array-relative azimuth can be mapped into room coordinates — the prerequisite
