@@ -1,7 +1,7 @@
 // src/live-node/output-sink.ts
 /** Minimal Node output: play a mono Float32 stream on the default device (naudiodon2). */
 interface NaudiodonOut {
-  AudioIO: new (cfg: unknown) => { write(buf: Buffer): void; quit(mode: string, done: () => void): void };
+  AudioIO: new (cfg: unknown) => { start(): void; write(buf: Buffer): void; quit(mode: string, done: () => void): void };
   SampleFormat16Bit: number;
 }
 
@@ -9,7 +9,7 @@ const INSTALL_HINT = 'Live playback needs the optional native addon "naudiodon2"
 
 export class NodeOutputSink {
   private readonly injected: NaudiodonOut | null | undefined;
-  private io: { write(buf: Buffer): void; quit(m: string, d: () => void): void } | null = null;
+  private io: { start(): void; write(buf: Buffer): void; quit(m: string, d: () => void): void } | null = null;
 
   constructor(opts: { naudiodon?: unknown } = {}) {
     this.injected = opts.naudiodon as NaudiodonOut | null | undefined;
@@ -31,6 +31,7 @@ export class NodeOutputSink {
     this.io = new na.AudioIO({
       outOptions: { channelCount: 1, sampleFormat: na.SampleFormat16Bit, sampleRate, closeOnError: true },
     });
+    this.io.start();
   }
 
   write(mono: Float32Array): void {

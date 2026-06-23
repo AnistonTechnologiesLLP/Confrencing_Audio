@@ -1,6 +1,7 @@
 // test/live-node-adapter.test.ts
 import { describe, it, expect } from 'vitest';
 import { NodeCaptureAdapter } from '../src/live-node/naudiodon-adapter.js';
+import { NodeOutputSink } from '../src/live-node/output-sink.js';
 
 /** A minimal fake of the naudiodon2 surface the adapter uses. */
 function fakeNaudiodon(emit?: (push: (buf: Buffer) => void) => void) {
@@ -51,5 +52,46 @@ describe('NodeCaptureAdapter', () => {
   it('throws a clear install hint when naudiodon2 is missing', async () => {
     const a = new NodeCaptureAdapter({ naudiodon: null });
     await expect(a.enumerate()).rejects.toThrow(/naudiodon2/);
+  });
+});
+
+/** A minimal fake of the naudiodon2 OUTPUT surface, recording start() + write() buffers. */
+function fakeOutputNaudiodon() {
+  const writes: Buffer[] = [];
+  const state = { started: false };
+  const na = {
+    AudioIO: class {
+      constructor(public cfg: unknown) {}
+      start() { state.started = true; }
+      write(buf: Buffer) { writes.push(buf); }
+      quit(_m: string, done: () => void) { done(); }
+    },
+    SampleFormat16Bit: 16,
+  };
+  return { na, writes, state };
+}
+
+describe('NodeOutputSink', () => {
+  it('starts the output stream on start()', async () => {
+    const { na, state } = fakeOutputNaudiodon();
+    const sink = new NodeOutputSink({ naudiodon: na });
+    await sink.start(44100);
+    expect(state.started).toBe(true);
+  });
+
+  it('converts Float32 mono to clamped Int16LE samples on write()', async () => {
+    const { na, writes } = fakeOutputNaudiodon();
+    const sink = new NodeOutputSink({ naudiodon: na });
+    await sink.start(44100);
+    sink.write(new Float32Array([0, 1, -1, 0.5]));
+    expect(writes.length).toBe(1);
+    const buf = writes[0]!;
+    const samples = [0, 1, 2, 3].map((i) => buf.readInt16LE(i * 2));
+    expect(samples).toEqual([0, 32767, -32767, 16384]);
+  });
+
+  it('throws a clear install hint when naudiodon2 is missing', async () => {
+    const sink = new NodeOutputSink({ naudiodon: null });
+    await expect(sink.start(44100)).rejects.toThrow(/naudiodon2/);
   });
 });
