@@ -388,6 +388,11 @@ and interoperates with the Python version (v1/v2 documents migrate losslessly).
 - **Design report** — `designReport(config, 'markdown' | 'html')` produces a
   shareable doc (room + RT60, devices, routing, AEC, coverage areas, mute groups,
   validation). HTML conversion is dependency-free.
+- **Commissioning / as-built report** — `commissioningReport(config, info?, 'markdown' | 'html')`
+  layers measured live state onto the as-built design report (`CommissioningInfo`: estimated
+  latency vs target, AEC/ERLE, A/B noise-bed proof, capsule health, front calibration) and
+  derives a pass/fail **sign-off checklist** + hand-sign form. All `info` fields are optional —
+  an empty info yields the config-only report plus a blank sign-off.
 - **Auto-Route / Optimize-room** — `autoRoute(config)` one-click optimises (AEC
   references + automixer + near-end send, then far-end → loudspeakers and a synced
   mic mute-link) with a change summary; `optimizeRoom(config, opts)` additionally

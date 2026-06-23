@@ -28,13 +28,23 @@ The JSON **config schema** is versioned independently via `CONFIG_VERSION`
   `${objectId}-seat${i}` (1-based) — byte-identical to `roomTargets`, so a matched seat
   correlates with a coverage-simulation target. Closes the remaining config-modeling gap with
   the Python engine (`conf_pipeline/seat_mapper.py`); tests ported 1:1 from its suite.
+- **Commissioning / as-built report** — `commissioningReport(config, info?, fmt?)` + the
+  `CommissioningInfo` type (`src/report/report.ts`). The as-built design report plus measured
+  live state (estimated latency vs target, AEC/ERLE, A/B noise-bed proof, capsule health,
+  front calibration) and a derived pass/fail **sign-off checklist** + hand-sign form. Reuses
+  the design-report sections; `CommissioningInfo` fields are all optional, so an empty info
+  yields the config-only report plus a blank sign-off. Markdown or HTML. Mirrors the Python
+  engine's `commissioning_report`; tests ported 1:1.
 
 ### Fixed
-- **Defensive load defaults** — `deserialize()` now defaults a schedule's absent `enabled`
-  (→ `true`) and `days` (→ every weekday), and a floor-plan background's absent `origin`
-  (→ `{x:0,y:0}`), matching the Python sibling's load behavior. A hand-edited or
-  Python-written document now round-trips identically and `validate()` no longer trips on an
-  `undefined`. (`src/persistence/serialize.ts`; +4 tests.)
+- **Defensive load defaults** — `deserialize()` now mirrors the Python sibling's load
+  defaults so any document Python accepts, TS accepts identically (a hand-edited or
+  Python-written partial document round-trips and `validate()` never trips on an `undefined`):
+  a schedule's `enabled` → `true` and `days` → every weekday; a scene's `muteStates`/
+  `zoneStates`/`steer` → empty and each steer's `offNadirDeg` → `90`; a mute group's
+  `deviceIds`/`zoneRefs`/`trigger`/`muted` → `[]`/`[]`/`'software'`/`false`; a room's
+  `units`/`objects` → `'meters'`/`[]`; and a floor-plan background's `origin`/`opacity` →
+  `{x:0,y:0}`/`0.5`. (`src/persistence/serialize.ts`; +9 tests.)
 
 ## [1.16.0] - 2026-06-13
 
