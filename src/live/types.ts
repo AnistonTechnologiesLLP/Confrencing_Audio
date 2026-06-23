@@ -1,4 +1,6 @@
 import type { ArrayGeometry } from '../beamformer/geometry.js';
+import type { SystemConfig } from '../model/index.js';
+import type { DetectOptions } from './doa.js';
 
 /** A capture device discovered by an adapter (selected by NAME, never index). */
 export interface CaptureDevice {
@@ -16,6 +18,22 @@ export interface CaptureStartOptions {
   onBlock: (channels: Float32Array[], sampleRate: number) => void;
 }
 
+export type AutoSteerMode = 'manual' | 'follow' | 'lockSeat';
+
+export interface AutoSteerConfig {
+  mode: AutoSteerMode;
+  sector?: { centerDeg: number; halfWidthDeg: number; frontOffsetDeg?: number };
+  /** Room config + which array/seat, for mode 'lockSeat'. */
+  room?: SystemConfig;
+  arrayId?: string;
+  seatId?: string;
+  /** Run detect every K covariance hops (default 11 ≈ 8 Hz at 44.1 kHz). */
+  detectionHops?: number;
+  doa?: DetectOptions;
+  switchMarginDeg?: number;
+  holdHops?: number;
+}
+
 /** A pluggable real-time multichannel capture backend. */
 export interface CaptureAdapter {
   enumerate(): Promise<CaptureDevice[]>;
@@ -31,6 +49,10 @@ export interface BeamOutput {
   clipped: boolean;
   azimuthDeg: number;
   offNadirDeg: number;
+  detected?: { azimuths: number[]; salienceDb: number[] } | null;
+  doaActive?: boolean;
+  mode?: AutoSteerMode;
+  lockedTarget?: { azimuthDeg: number; seatId?: string } | null;
 }
 
 /** Engine configuration. */
@@ -41,4 +63,5 @@ export interface LiveConfig {
   azimuthDeg?: number;
   offNadirDeg?: number;
   taps?: number;
+  autoSteer?: AutoSteerConfig;
 }

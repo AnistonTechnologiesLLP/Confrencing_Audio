@@ -531,6 +531,29 @@ await engine.start();
 > chain are deferred to later phases. `naudiodon2` is an **optional peer dependency** — install it
 > (with a C++ toolchain) only to use `./live-node`.
 
+### Live steering (Phase 2)
+
+The live engine can **steer itself**. Enable it with `LiveConfig.autoSteer`:
+
+```ts
+const engine = new LiveEngine(new NodeCaptureAdapter(), {
+  geom, deviceName: 'SB-POLARIS', sampleRate: 44100,
+  autoSteer: { mode: 'follow', sector: { centerDeg: 0, halfWidthDeg: 60 } }, // follow the dominant talker in front
+});
+engine.onOutput((o) => { /* o.detected = bearings; o.doaActive = VAD; o.azimuthDeg = where the beam points */ });
+```
+
+- `mode: 'follow'` — SRP-PHAT direction-of-arrival (2° azimuth grid, band-limited 300–3800 Hz) picks the
+  dominant talker; a hold/switch tracker re-aims the single beam at it without jitter.
+- `mode: 'lockSeat'` (+ `room`, `arrayId`, `seatId`) — pin the beam to a room seat's azimuth (via the
+  seat-mapper; needs the array's `bearingDeg`). Falls back to `follow` if the seat can't be resolved.
+- `mode: 'manual'` (default) — Phase-1 behavior; you call `setLook` yourself.
+
+Still pure and zero-dependency: the FFT is a built-in radix-2 transform. **Honest limits:** azimuth only
+(off-nadir fixed at 90°; a planar ring can't tell a source above the array plane from below); resolution
+≈ beamwidth (~40° min talker separation); band-limited below the ~5.6 kHz spatial-aliasing cutoff;
+single-talker follow (simultaneous multi-talker capture is a later, frequency-domain phase).
+
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md) for the version history.
