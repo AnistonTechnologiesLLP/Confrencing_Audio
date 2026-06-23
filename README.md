@@ -474,6 +474,31 @@ coordinates (room-aware steering). Additive and omit-when-absent, so v1–v4 doc
 byte-identically; set it with `setArrayBearing(config, arrayId, deg)`. At matching v5 parity
 with the Python engine.
 
+## Room-aware seat mapping
+
+A pure, zero-dependency geometry layer (`src/seat-mapper/`) composes *over* a detected
+direction-of-arrival: given an array's room pose (`position` + the v5 `bearingDeg`) and the
+room's furniture seats, it maps a detected **array-relative** azimuth (`0° = +Y`, clockwise) to
+the nearest seat — and runs the inverse for pinning a beam to a chosen seat or clicked point.
+
+- `nearestSeat` / `nearestSeatForArray` — DOA → nearest `SeatMatch` (gated by a max angular
+  separation, so a direction "between seats" returns `null`).
+- `seatsOwnedByArray` — partition seats across multiple arrays by distance (so two arrays don't
+  both capture the same talker), ties to the lowest array id.
+- `seatAzimuthForArray` / `azimuthForArrayPoint` — array-relative azimuth of a seat / arbitrary
+  point ("lock to seat" / "lock to place").
+- `seatNullAzimuths` / `exclusionZoneAzimuths` — array-relative bearings of the other seats /
+  of no-pickup (exclusion) zone centres, for steering nulls; `azimuthInPickupZone` tests whether
+  a detection falls inside any pickup zone; `roomSeats` enumerates `[seatId, anchor]`.
+
+Seat ids are synthesized as `${objectId}-seat${i}` (1-based) — byte-identical to `roomTargets`,
+so a matched seat correlates directly with a coverage-simulation target. Mirrors the Python
+engine's `conf_pipeline/seat_mapper.py`.
+
+```ts
+import { setArrayBearing, nearestSeatForArray, seatAzimuthForArray } from 'conferencing-audio-pipeline';
+```
+
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md) for the version history.

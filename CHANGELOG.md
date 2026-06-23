@@ -18,6 +18,23 @@ The JSON **config schema** is versioned independently via `CONFIG_VERSION`
   `bearingDeg`), so existing v1–v4 documents migrate byte-identically; `setArrayBearing`
   API. Parity-matched with the Python engine's v5. (`src/model/devices.ts`,
   `src/persistence/serialize.ts`, `src/index.ts`; +3 round-trip/migration tests.)
+- **Room-aware seat mapping** (`src/seat-mapper/seat-mapper.ts`) — a pure, zero-dependency
+  geometry layer that turns a detected array-relative azimuth (`0° = +Y`, clockwise) into the
+  nearest room seat, and back. `nearestSeat` / `nearestSeatForArray` (DOA → seat, gated by a
+  max angular separation), `seatsOwnedByArray` (partition seats across arrays by distance),
+  `seatAzimuthForArray` / `azimuthForArrayPoint` (lock-to-seat / lock-to-place inverse),
+  `seatNullAzimuths` / `exclusionZoneAzimuths` (array-relative bearings to null), `roomSeats`,
+  `azimuthInPickupZone`, and the `SeatMatch` type. Seat ids are synthesized as
+  `${objectId}-seat${i}` (1-based) — byte-identical to `roomTargets`, so a matched seat
+  correlates with a coverage-simulation target. Closes the remaining config-modeling gap with
+  the Python engine (`conf_pipeline/seat_mapper.py`); tests ported 1:1 from its suite.
+
+### Fixed
+- **Defensive load defaults** — `deserialize()` now defaults a schedule's absent `enabled`
+  (→ `true`) and `days` (→ every weekday), and a floor-plan background's absent `origin`
+  (→ `{x:0,y:0}`), matching the Python sibling's load behavior. A hand-edited or
+  Python-written document now round-trips identically and `validate()` no longer trips on an
+  `undefined`. (`src/persistence/serialize.ts`; +4 tests.)
 
 ## [1.16.0] - 2026-06-13
 
