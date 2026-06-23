@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { directionUnit, fracDelayKernel, steerRealDelays, StreamingDelaySumBeam } from '../src/live/beam.js';
-import { sensibel8, SOUND_SPEED_MPS } from '../src/beamformer/geometry.js';
+import { sensibel8, SOUND_SPEED_MPS, withActiveChannels } from '../src/beamformer/geometry.js';
 
 describe('directionUnit', () => {
   it('matches the canonical az/off-nadir convention', () => {
@@ -31,6 +31,19 @@ describe('fracDelayKernel', () => {
     let sum = 0;
     for (const v of k) sum += v;
     expect(sum).toBeCloseTo(1, 9);
+  });
+
+  it('shifts its group delay by the fractional amount', () => {
+    // Σ n·k[n] is the kernel's center of mass (k is DC-normalized so Σ k = 1).
+    const centroid = (k: Float64Array): number => {
+      let s = 0;
+      for (let i = 0; i < k.length; i++) s += i * k[i]!;
+      return s;
+    };
+    expect(centroid(fracDelayKernel(0, 15))).toBeCloseTo(7, 6); // symmetric → center = 7
+    const c = centroid(fracDelayKernel(0.5, 15));
+    expect(c).toBeGreaterThan(7); // mass shifted toward the (larger) delay
+    expect(c).toBeLessThan(8);
   });
 });
 
@@ -117,5 +130,22 @@ describe('StreamingDelaySumBeam', () => {
 
     for (let i = 0; i < half; i++) expect(b1[i]!).toBeCloseTo(a[i]!, 6);
     for (let i = 0; i < half; i++) expect(b2[i]!).toBeCloseTo(a[half + i]!, 6);
+  });
+
+  it('excludes a dead capsule and still beamforms over the rest', () => {
+    const fs = 44100, n = 4096;
+    const full = sensibel8(0.04);
+    const mask = [true, true, true, true, false, true, true, true]; // capsule 5 (index 4) dead
+    const masked = withActiveChannels(full, mask);
+    const channels = planeWave(full, 0, 90, 1500, fs, n); // source due north (all 8 channels present)
+    const beam = new StreamingDelaySumBeam(masked, fs);
+    beam.setLook(0, 90);
+    const aligned = beam.process(channels);
+    beam.reset();
+    beam.setLook(180, 90);
+    const away = beam.process(channels);
+    expect([...aligned].every((v) => Number.isFinite(v))).toBe(true); // well-defined output
+    const tail = (x: Float32Array) => x.subarray(64);
+    expect(rms(tail(aligned))).toBeGreaterThan(rms(tail(away)) * 1.5); // still reinforces with 7 capsules
   });
 });

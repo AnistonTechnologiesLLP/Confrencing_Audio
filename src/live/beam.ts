@@ -106,7 +106,7 @@ export class StreamingDelaySumBeam {
     this.geom = geom;
     this.fs = sampleRate;
     this.c = opts.speedOfSound ?? SOUND_SPEED_MPS;
-    this.L = Math.max(5, Math.trunc(opts.taps ?? DEFAULT_FRACDELAY_TAPS) | 1);
+    this.L = Math.max(5, Math.trunc(opts.taps ?? DEFAULT_FRACDELAY_TAPS) | 1); // | 1 forces odd length
     this.setLook(0, 90);
   }
 
@@ -159,6 +159,7 @@ export class StreamingDelaySumBeam {
       if (D > 0) {
         const newHist = new Float64Array(D);
         for (let i = 0; i < D; i++) {
+          // new ring = last D samples of [hist | block]; correct for n<D too (reads from old hist when j<0)
           const j = n - D + i; // index into block tail (when n >= D)
           newHist[i] = j >= 0 ? ch[j]! : histM[D + j]!;
         }
