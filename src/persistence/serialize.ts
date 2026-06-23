@@ -2,6 +2,7 @@ import type { SystemConfig } from '../model/config.js';
 import { CONFIG_VERSION } from '../model/config.js';
 import type { DeviceType } from '../model/devices.js';
 import { defaultProfileId } from '../profiles/profiles.js';
+import { WEEKDAYS } from '../model/control.js';
 
 /**
  * JSON persistence. The config is plain data (no Maps/Sets/functions/Dates), so
@@ -73,6 +74,23 @@ export function deserialize(json: string): SystemConfig {
     if (!Array.isArray(c.muteGroups)) c.muteGroups = [];
     if (!Array.isArray(c.scenes)) c.scenes = [];
     if (!Array.isArray(c.schedules)) c.schedules = [];
+    // A schedule's `enabled`/`days` are required by the model, but a hand-edited
+    // or partial document may omit them — default them (mirrors the Python
+    // dataclass defaults: `enabled=True`, `days=` every weekday).
+    for (const s of c.schedules as Array<Record<string, unknown>>) {
+      if (typeof s.enabled !== 'boolean') s.enabled = true;
+      if (!Array.isArray(s.days)) s.days = [...WEEKDAYS];
+    }
+  }
+  // Normalize the floor-plan background: a hand-edited background may omit
+  // `origin` (the model requires it; the API defaults it to the world origin), so
+  // default it here too (mirrors the Python `_bg` default of `Point2D(0, 0)`).
+  if (obj.room !== null && typeof obj.room === 'object') {
+    const room = obj.room as Record<string, unknown>;
+    if (room.background !== null && typeof room.background === 'object') {
+      const bg = room.background as Record<string, unknown>;
+      if (bg.origin === null || typeof bg.origin !== 'object') bg.origin = { x: 0, y: 0 };
+    }
   }
   // Normalize camera pose: a hand-edited camera may omit bearing/tilt; the model
   // requires them (the factory defaults both to 0), so default them here too.
