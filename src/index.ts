@@ -154,6 +154,20 @@ export { SceneScheduler, nextFire, type SchedulerClock } from './scheduler/sched
 // Import them from the `conferencing-audio-pipeline/node` subpath entry instead.
 // --- host-side array beamformer DESIGN layer (pure-stdlib, vendor-neutral) ---
 export * as beamformer from './beamformer/index.js';
+// --- room-aware seat mapping (DOA → nearest seat; lock-to-seat/point; seat & exclusion nulls) ---
+export {
+  DEFAULT_MAX_SEPARATION_DEG,
+  roomSeats,
+  seatsOwnedByArray,
+  nearestSeat,
+  nearestSeatForArray,
+  seatNullAzimuths,
+  seatAzimuthForArray,
+  azimuthForArrayPoint,
+  exclusionZoneAzimuths,
+  azimuthInPickupZone,
+  type SeatMatch,
+} from './seat-mapper/seat-mapper.js';
 
 // ---------------------------------------------------------------------------
 // Config lifecycle

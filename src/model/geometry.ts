@@ -71,7 +71,7 @@ export function pointInShape(p: Point2D, shape: ZoneShape): boolean {
 // ---------------------------------------------------------------------------
 
 /** Wrap a compass bearing into `[0, 360)`. */
-function normBearing(deg: number): number {
+export function normBearing(deg: number): number {
   return ((deg % 360) + 360) % 360;
 }
 
