@@ -1108,7 +1108,10 @@ export class NodeCaptureAdapter implements CaptureAdapter {
     if (this.injected === null) throw new Error(INSTALL_HINT);
     if (this.injected !== undefined) return this.injected;
     try {
-      const mod = (await import('naudiodon2')) as unknown as NaudiodonLike;
+      // Computed specifier (`: string`, not a literal) so tsc treats this as a
+      // dynamic any-import and does NOT require the optional native addon's types.
+      const spec: string = 'naudiodon2';
+      const mod = (await import(spec)) as unknown as NaudiodonLike;
       return mod;
     } catch {
       throw new Error(INSTALL_HINT);
@@ -1181,7 +1184,8 @@ export class NodeOutputSink {
     if (this.injected === null) throw new Error(INSTALL_HINT);
     if (this.injected !== undefined) return this.injected;
     try {
-      return (await import('naudiodon2')) as unknown as NaudiodonOut;
+      const spec: string = 'naudiodon2'; // computed specifier: optional native addon, not a type dep
+      return (await import(spec)) as unknown as NaudiodonOut;
     } catch {
       throw new Error(INSTALL_HINT);
     }
