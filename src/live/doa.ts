@@ -19,8 +19,8 @@ export const DEFAULT_DOA = {
   gridStepDeg: 2,
   maxTalkers: 3,
   minSeparationDeg: 40,
-  minSalienceDb: 2,
-  vadFloorDb: 2,
+  minSalienceDb: 3,
+  vadFloorDb: 3,
 } as const;
 
 export interface Detection {

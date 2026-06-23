@@ -37,7 +37,8 @@ describe('detect', () => {
   it('recovers a single source azimuth within a grid step', () => {
     const geom = sensibel8(0.04);
     const R = rankOneCovariance(geom, 80, FREQS);
-    const res = detect(R, FREQS, geom);
+    // synthetic rank-1 source on the 40 mm array is ~2 dB salient — lower the VAD/salience floor for this scenario (production DEFAULT_DOA stays at the Python-parity 3 dB).
+    const res = detect(R, FREQS, geom, { vadFloorDb: 1.5, minSalienceDb: 1.5 });
     expect(res.active).toBe(true);
     expect(res.detections.length).toBeGreaterThanOrEqual(1);
     expect(circularSep(res.detections[0]!.azimuthDeg, 80)).toBeLessThanOrEqual(4); // ≤ 2 grid steps
@@ -48,7 +49,8 @@ describe('detect', () => {
     const r1 = rankOneCovariance(geom, 30, FREQS);
     const r2 = rankOneCovariance(geom, 170, FREQS);
     const R = r1.map((m, f) => m.map((row, i) => row.map((c, j) => ({ re: c.re + r2[f]![i]![j]!.re, im: c.im + r2[f]![i]![j]!.im }))));
-    const res = detect(R, FREQS, geom, { maxTalkers: 2 });
+    // synthetic rank-1 source on the 40 mm array is ~2 dB salient — lower the VAD/salience floor for this scenario (production DEFAULT_DOA stays at the Python-parity 3 dB).
+    const res = detect(R, FREQS, geom, { maxTalkers: 2, vadFloorDb: 1.5, minSalienceDb: 1.5 });
     const az = res.detections.map((d) => d.azimuthDeg);
     expect(az.some((a) => circularSep(a, 30) <= 6)).toBe(true);
     expect(az.some((a) => circularSep(a, 170) <= 6)).toBe(true);
