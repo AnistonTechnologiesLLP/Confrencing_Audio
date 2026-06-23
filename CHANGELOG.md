@@ -11,6 +11,14 @@ The JSON **config schema** is versioned independently via `CONFIG_VERSION`
 ## [Unreleased]
 
 ### Added
+- **Live audio (Phase 1, Node)** — a real-time fractional-delay-and-sum beamformer. A pure,
+  zero-dependency, browser-safe core (`./live`: `LiveEngine`, `StreamingDelaySumBeam`, `LevelMeter`,
+  `MockCaptureAdapter`, `CaptureAdapter`) plus a Node-only POLARIS capture adapter + output sink
+  (`./live-node`, optional `naudiodon2` peer dep, lazy-imported). The offline narrowband weights can't
+  be applied to broadband audio, so the live path aligns capsules by geometric delay and sums (ported
+  from the Python engine's `_FracDelaySumBeam`). The browser can't capture 8 discrete USB channels, so
+  the live path is Node-only; DOA/steering and the cleaning chain are later phases. Zero hard runtime
+  deps unchanged.
 - **Microphone-array mounting bearing** (schema **v4 → v5**) — `MicrophoneArray` gains
   an optional `bearingDeg` (compass heading of the array's 0° reference, 0° = +Y), so a
   detected array-relative azimuth can be mapped into room coordinates — the prerequisite
