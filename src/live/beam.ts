@@ -7,7 +7,7 @@
  * frequency-invariant operation. Faithful port of the Python engine's
  * `_FracDelaySumBeam` (`conf_pipeline_control/polaris_beamformer.py`).
  */
-import { ArrayGeometry, SOUND_SPEED_MPS } from '../beamformer/geometry.js';
+import { type ArrayGeometry, SOUND_SPEED_MPS } from '../beamformer/geometry.js';
 
 export const DEFAULT_FRACDELAY_TAPS = 15;
 
