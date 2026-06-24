@@ -125,12 +125,15 @@ export class StreamingAec {
       this.qR[this.qFill + i] = ref !== null ? (ref[i] ?? 0) : 0;
     }
     this.qFill += n;
+    let farendSeen = false;
     while (this.qFill >= this.H) {
       this.processHop(nearEndActive);
+      farendSeen = farendSeen || this._farend;
       this.qM.copyWithin(0, this.H, this.qFill);
       this.qR.copyWithin(0, this.H, this.qFill);
       this.qFill -= this.H;
     }
+    this._farend = farendSeen;
     const out = new Float32Array(n);
     const avail = Math.min(n, this.outFill);
     const pad = n - avail;
@@ -219,6 +222,8 @@ export class StreamingAec {
   reset(): void {
     this.qFill = 0;
     this.outFill = this.F;
+    this.qM.fill(0);
+    this.qR.fill(0);
     this.inbufM.fill(0);
     this.inbufR.fill(0);
     this.ola.fill(0);

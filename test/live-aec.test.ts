@@ -46,6 +46,62 @@ describe('StreamingAec', () => {
     expect(aec.farendActive).toBe(false); // zero reference ⇒ no far-end
   });
 
+  it('ref=null preserves weights: erleDb stays 0 from cold start', () => {
+    const aec = new StreamingAec(44100, {});
+    const x = new Float32Array(256).fill(0.1);
+    aec.process(x, null, false);
+    expect(aec.erleDb).toBe(0); // no adaptation on null reference
+  });
+
+  it('nearEndActive=true freezes adaptation but farendActive is still visible', () => {
+    const aec = new StreamingAec(44100, {});
+    const rnd = lcg(11);
+    const D = 256;
+    const hist = new Float32Array(1024);
+    let hi = 0;
+    const N = 256;
+    // Run many blocks with nearEndActive=true — weights must never adapt
+    for (let b = 0; b < 300; b++) {
+      const ref = new Float32Array(N);
+      const mic = new Float32Array(N);
+      for (let i = 0; i < N; i++) {
+        const r = 0.5 * rnd();
+        ref[i] = r;
+        hist[hi % hist.length] = r;
+        mic[i] = 0.7 * (hist[((hi - D) % hist.length + hist.length) % hist.length]!);
+        hi++;
+      }
+      aec.process(mic, ref, true);
+    }
+    // No adaptation happened: ERLE remains 0 (weights are all zero)
+    expect(aec.erleDb).toBe(0);
+    // But the far-end gate must still detect the reference signal
+    expect(aec.farendActive).toBe(true);
+  });
+
+  it('weight-clamp stability: high-amplitude coherent echo → no NaN/Inf, finite erleDb', () => {
+    const aec = new StreamingAec(44100, {});
+    const rnd = lcg(17);
+    const D = 128;
+    const hist = new Float32Array(512);
+    let hi = 0;
+    const N = 256;
+    for (let b = 0; b < 300; b++) {
+      const ref = new Float32Array(N);
+      const mic = new Float32Array(N);
+      for (let i = 0; i < N; i++) {
+        const r = rnd(); // full amplitude ~1.0
+        ref[i] = r;
+        hist[hi % hist.length] = r;
+        mic[i] = hist[((hi - D) % hist.length + hist.length) % hist.length]!;
+        hi++;
+      }
+      const out = aec.process(mic, ref, false);
+      expect([...out].every(Number.isFinite)).toBe(true);
+    }
+    expect(Number.isFinite(aec.erleDb)).toBe(true);
+  });
+
   it('reset() drops the filter + ERLE (re-feeding reproduces a fresh run)', () => {
     const mk = () => new StreamingAec(44100, {});
     const rnd = lcg(5);
