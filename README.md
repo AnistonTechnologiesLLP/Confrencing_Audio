@@ -659,8 +659,47 @@ const engine = new LiveEngine(new NodeCaptureAdapter(), {
 - It runs after the cleaning chain (matching the Python order). Omitting `agc` is byte-identical to Phase 3c.
 
 Still zero-dependency (reuses the existing one-pole tracker). **Honest limits:** a control-pure one-pole loudness
-gain, not an EBU-R128 / multiband processor; no transient-duck `freeze` yet (no transient stage in TS). PEQ,
-band-limit, and voice-gate are the remaining 3d sub-phases.
+gain, not an EBU-R128 / multiband processor; no transient-duck `freeze` yet (no transient stage in TS).
+
+### Parametric EQ + band-limit + voice-gate (Phase 3d-2 / 3d-3)
+
+The final tone/level stages, all opt-in and zero-dependency. The full live cleaning chain is:
+
+```
+beam → [AEC] → dereverb → denoise → [PEQ] → [AGC] → [band-limit] → [voice-gate] → meter
+```
+
+```ts
+const engine = new LiveEngine(new NodeCaptureAdapter(), {
+  geom, deviceName: 'SB-POLARIS', sampleRate: 44100,
+  cleaning: { engine: 'omlsa' },
+  peq: { bands: [{ type: 'highShelf', freqHz: 3000, gainDb: 3, q: 0.7 }] }, // tone
+  agc: { targetDb: -20 },                                                   // level
+  bandLimit: { highpassHz: 100, lowpassHz: 7500 },                          // speech-band trim
+  voiceGate: {},                                                            // duck non-speech
+});
+```
+
+- **`peq: { bands }`** — `StreamingPeq`, a cascade of up to 4 RBJ-cookbook biquads
+  (`bell`/`lowShelf`/`highShelf`/`highpass`/`lowpass`, the shared `PeqBand` model). The Python uses scipy
+  `sosfilt`; the TS port hand-rolls the coefficient math and a Direct-Form-II-transposed recursion with carried
+  Float64 state — exact IIR, so a high-Q notch doesn't time-alias the way an STFT multiply would. Runs **before**
+  the AGC (tone, then level). No enabled band ⇒ a bit-exact pass-through.
+- **`bandLimit: { highpassHz?, lowpassHz? }`** — a gentle Butterworth HP+LP that trims out-of-band rumble/hiss.
+  **No new DSP** — it reuses `StreamingPeq`. Runs **after** the AGC, before the voice-gate (matching the Python
+  chain). Linear — no telemetry field.
+- **`voiceGate: { threshold?, floorDb?, attackMs?, releaseMs?, modRef? }`** — `StreamingVoiceGate`, a "voice only"
+  output gate that ducks non-speech toward a shallow −15 dB floor (a duck, not a mute) with a fast attack / slow
+  release, driven by a **level-invariant** syllabic-modulation `SpeechPresenceScorer` (a difference-of-EMAs
+  band-pass on the output envelope ÷ its slow level — a steady fan reads as ~0, a louder fan doesn't help because
+  level is the denominator). Onset-safe (a sharp level rise opens it before the scorer confirms). Runs **last**;
+  `BeamOutput.voiceGate` surfaces `{ open, reductionDb, score }`.
+
+Still zero-dependency (the biquad, scorer, and gate are all hand-rolled). **Honest limits:** the band-limit is a
+gentle 12 dB/oct speech-band trim, not the beam anti-alias FIR; the voice-gate is a timbre/modulation test — it
+does **not** remove a competing human voice in the pickup zone (that is speech; only spatial zone-nulling does).
+Omitting any stage is byte-identical. Phase 3d completes the live cleaning chain (AEC → dereverb → denoise →
+PEQ → AGC → band-limit → voice-gate).
 
 ## Changelog
 

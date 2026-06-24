@@ -66,7 +66,22 @@ The JSON **config schema** is versioned independently via `CONFIG_VERSION`
   peak-limited (−1 dB) so it never pumps the floor or clips. Runs after the cleaning chain, before the meter.
   Wired through `LiveConfig.agc` (default off = Phase-3c behavior); `BeamOutput.agc` surfaces the applied
   `gainLinear` (omit-when-absent). Pure DSP — no new dependency. Ported from the Python `TargetLoudnessAgc`.
-  PEQ / band-limit / voice-gate are the remaining 3d sub-phases.
+- **Parametric EQ (Phase 3d-2)** — opt-in `StreamingPeq` (`peq.ts`), a zero-dependency cascade of up to 4
+  RBJ-cookbook biquads (`bell`/`lowShelf`/`highShelf`/`highpass`/`lowpass`) reusing the shared `PeqBand`
+  model. The Python uses scipy `sosfilt`; the TS port hand-rolls the coefficient math **and** a
+  Direct-Form-II-transposed recursion with carried Float64 state (no aliasing on a high-Q notch, stable at
+  low `f/fs`). Runs on the cleaned mono **before** the AGC (tone, then level). Wired through `LiveConfig.peq`
+  (default off = byte-identical); same-object pass-through when no band is enabled. Ported from the Python
+  `StreamingPeq`.
+- **Speech band-limit (Phase 3d-3)** — opt-in `LiveConfig.bandLimit` (`{ highpassHz?, lowpassHz? }`) trims
+  out-of-band rumble/hiss via a gentle Butterworth HP+LP. **No new DSP** — it reuses `StreamingPeq`. Runs
+  **after** the AGC and before the voice-gate, matching the Python chain order. No telemetry field (linear).
+- **Voice-only output gate (Phase 3d-3)** — opt-in `StreamingVoiceGate` (`voice-gate.ts`) ducks non-speech
+  (gaps, a steady fan/hum, knocks) toward a shallow −15 dB floor with a fast-attack/slow-release envelope,
+  driven by a level-invariant syllabic-modulation `SpeechPresenceScorer` (`speech-presence.ts`, three one-pole
+  EMAs — pure, no FFT). Onset-safe (a sharp level rise opens it before the scorer confirms) and a duck, not a
+  mute. Runs **last**. Wired through `LiveConfig.voiceGate`; `BeamOutput.voiceGate` surfaces
+  `{ open, reductionDb, score }` (omit-when-absent). Ported from the Python `VoiceOnlyGate` + `SpeechPresenceScorer`.
 - **Microphone-array mounting bearing** (schema **v4 → v5**) — `MicrophoneArray` gains
   an optional `bearingDeg` (compass heading of the array's 0° reference, 0° = +Y), so a
   detected array-relative azimuth can be mapped into room coordinates — the prerequisite

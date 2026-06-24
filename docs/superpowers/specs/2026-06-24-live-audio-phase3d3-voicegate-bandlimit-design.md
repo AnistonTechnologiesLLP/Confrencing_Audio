@@ -101,11 +101,14 @@ block` / `reset()` contract as the other stages.
     `[{type:'lowpass', freqHz:lowpassHz, gainDb:0, q:0.70710678}]`, then `new StreamingPeq(sr, bands)` (null if no
     band resolves — the PEQ's own no-op guards also drop out-of-range cutoffs).
   - A private `voiceGate: StreamingVoiceGate | null = null` built when `config.voiceGate` is set.
-  - In `onBlock`, the new chain order:
-    `… cleaner → if (bandLimit) mono = bandLimit.process(mono) → if (peq) mono = peq.process(mono) →
-     if (agc) mono = agc.process(mono,false) → if (voiceGate) mono = voiceGate.process(mono) → meter.update → emit`.
-    (Band-limit runs **before** the user PEQ + AGC — trim the band, then shape, then level. Voice-gate runs
-    **last**, after the AGC, so the level-invariant score sees the final operating point and the meter/emitted
+  - In `onBlock`, the chain order (**updated after the whole-branch review to match the Python chain**
+    `PEQ → AGC → band-limit → voice-gate`):
+    `… cleaner → if (peq) mono = peq.process(mono) → if (agc) mono = agc.process(mono,false) →
+     if (bandLimit) mono = bandLimit.process(mono) → if (voiceGate) mono = voiceGate.process(mono) →
+     meter.update → emit`.
+    (Band-limit runs **after** the AGC — Python-chain parity; band-limit is linear so the magnitude response is
+    position-independent among the linear stages, only the AGC's loudness reference differs. Voice-gate runs
+    **last**, after everything, so the level-invariant score sees the final operating point and the meter/emitted
     mono reflect the gate.)
   - Emit `...(this.voiceGate ? { voiceGate: { open: this.voiceGate.gateOpen, reductionDb:
     this.voiceGate.reductionDb, score: this.voiceGate.score } } : {})`.
@@ -117,9 +120,10 @@ block` / `reset()` contract as the other stages.
 ## 3. Data flow
 
 ```
-… → beam → [AEC] → cleaner(dereverb→denoise) → [bandLimit:PEQ HP+LP] → [PEQ] → [AGC] → [voiceGate] → meter → emit
+… → beam → [AEC] → cleaner(dereverb→denoise) → [PEQ] → [AGC] → [bandLimit:PEQ HP+LP] → [voiceGate] → meter → emit
                                                                                               BeamOutput { …, voiceGate?: { open, reductionDb, score } }
 ```
+(Band-limit position updated to after-AGC per the whole-branch review — Python-chain parity.)
 
 ## 4. Real-time safety
 
