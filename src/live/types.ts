@@ -53,16 +53,18 @@ export interface BeamOutput {
   doaActive?: boolean;
   mode?: AutoSteerMode;
   lockedTarget?: { azimuthDeg: number; seatId?: string } | null;
-  cleaning?: { engine: string; preserved: boolean };
+  cleaning?: { engine: string; preserved: boolean; dereverb?: boolean };
 }
 
 /** Opt-in post-beam noise suppression config. */
 export interface CleaningConfig {
-  engine: 'off' | 'gate' | 'omlsa' | 'wiener';
-  /** 0..1 — denoiser strength (gentler at lower values). */
+  engine?: 'off' | 'gate' | 'omlsa' | 'wiener';
+  /** 0..1 → the denoiser `amount` (gentler at lower values). */
   strength?: number;
-  /** Wrap the cleaner in the level-preserving makeup gain. */
+  /** Wrap the cleaner in the level-preserving makeup. */
   preserveLevel?: boolean;
+  /** Opt-in dereverb stage; runs BEFORE the denoiser. */
+  dereverb?: { t60?: number; beta?: number; gminDb?: number; earlyMs?: number };
 }
 
 /** Engine configuration. */

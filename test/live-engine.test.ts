@@ -265,3 +265,68 @@ describe('LiveEngine cleaning', () => {
     expect(onRms).toBeLessThanOrEqual(offRms + 1e-6);
   });
 });
+
+describe('LiveEngine dereverb (Phase 3b)', () => {
+  const geom = sensibel8(0.04);
+  function mock() { return new MockCaptureAdapter({ channels: 8, azimuthDeg: 90, blocks: 40, blockSize: 256, freqHz: 1500 }); }
+
+  it('dereverb-only surfaces { engine:"off", preserved:false, dereverb:true } and runs', async () => {
+    const engine = new LiveEngine(mock(), { geom, deviceName: 'MOCK-8', sampleRate: 44100, azimuthDeg: 90, cleaning: { dereverb: {} } });
+    let info: unknown = 'unset';
+    engine.onOutput((o) => { info = (o as { cleaning?: unknown }).cleaning; });
+    await engine.start();
+    expect(info).toEqual({ engine: 'off', preserved: false, dereverb: true });
+  });
+
+  it('dereverb + omlsa surfaces both', async () => {
+    const engine = new LiveEngine(mock(), { geom, deviceName: 'MOCK-8', sampleRate: 44100, azimuthDeg: 90, cleaning: { dereverb: {}, engine: 'omlsa' } });
+    let info: unknown = 'unset';
+    engine.onOutput((o) => { info = (o as { cleaning?: unknown }).cleaning; });
+    await engine.start();
+    expect(info).toEqual({ engine: 'omlsa', preserved: false, dereverb: true });
+  });
+
+  it('omlsa-only keeps the Phase-3a shape (no dereverb key)', async () => {
+    const engine = new LiveEngine(mock(), { geom, deviceName: 'MOCK-8', sampleRate: 44100, azimuthDeg: 90, cleaning: { engine: 'omlsa' } });
+    let info: unknown = 'unset';
+    engine.onOutput((o) => { info = (o as { cleaning?: unknown }).cleaning; });
+    await engine.start();
+    expect(info).toEqual({ engine: 'omlsa', preserved: false }); // exactly the 3a shape
+  });
+
+  it('dereverb + omlsa + preserveLevel: cleaning deep-equals expected shape and runs', async () => {
+    // Exercises the LevelPreservingCleaner(ChainedCleaner([dereverb, omlsa])) 3-layer stack.
+    const engine = new LiveEngine(mock(), {
+      geom, deviceName: 'MOCK-8', sampleRate: 44100, azimuthDeg: 90,
+      cleaning: { dereverb: {}, engine: 'omlsa', preserveLevel: true },
+    });
+    let info: unknown = 'unset';
+    engine.onOutput((o) => { info = (o as { cleaning?: unknown }).cleaning; });
+    await engine.start();
+    expect(info).toEqual({ engine: 'omlsa', preserved: true, dereverb: true });
+  });
+
+  it('dereverb + omlsa never amplifies (cleaned RMS <= uncleaned RMS)', async () => {
+    // Assert the chain never amplifies: onRms <= offRms + tiny epsilon.
+    const onEngine = new LiveEngine(mock(), {
+      geom, deviceName: 'MOCK-8', sampleRate: 44100, azimuthDeg: 90,
+      cleaning: { dereverb: {}, engine: 'omlsa' },
+    });
+    let onRms = 0;
+    onEngine.onOutput((o) => {
+      let s = 0; for (const v of o.mono) s += v * v;
+      onRms = Math.sqrt(s / o.mono.length);
+    });
+    await onEngine.start();
+
+    const offEngine = new LiveEngine(mock(), { geom, deviceName: 'MOCK-8', sampleRate: 44100, azimuthDeg: 90 });
+    let offRms = 0;
+    offEngine.onOutput((o) => {
+      let s = 0; for (const v of o.mono) s += v * v;
+      offRms = Math.sqrt(s / o.mono.length);
+    });
+    await offEngine.start();
+
+    expect(onRms).toBeLessThanOrEqual(offRms + 1e-6);
+  });
+});

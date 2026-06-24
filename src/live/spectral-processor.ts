@@ -31,7 +31,7 @@ export class StreamingSpectralProcessor {
   protected readonly nb: number;
   private readonly fft: FftRadix2;
   private readonly win: Float64Array;
-  private readonly gFloor: number;
+  protected readonly gFloor: number;
   private readonly oversub: number;
   private readonly gainAlpha: number;
   private readonly warmup: number;

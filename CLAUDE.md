@@ -125,6 +125,12 @@ Key structural facts that span files:
   before the meter. ~12 ms latency when active. Dereverb/AEC/AGC are later sub-phases; DFN3 needs ONNX
   (deferred, optional).
 
+- **Dereverb (Phase 3b, `src/live/dereverb.ts` + `cleaner-chain.ts`).** A `StreamingDereverb` extends the
+  Phase-3a STFT base and overrides the gain law with Lebart/Habets late-reverb spectral subtraction
+  (`G = max(1 − β·R/P, Gmin)`; `R` = a T60-decayed delayed-power estimate). It runs **before** the denoiser
+  via an ordered `ChainedCleaner` (matching the Python chain order). Opt-in via `LiveConfig.cleaning.dereverb`
+  (default off = Phase-3a unchanged); still zero-dep. AEC/AGC/PEQ are later sub-phases.
+
 ## Conventions
 
 - **Relative imports carry a `.js` extension** even though sources are `.ts` (ESM resolution). Match this —
