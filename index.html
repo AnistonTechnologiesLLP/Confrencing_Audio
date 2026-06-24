@@ -524,13 +524,27 @@
           <pre id="json"></pre>
         </section>
 
-        <!-- LIVE (synthetic visualizer of the live-audio core) -->
+        <!-- LIVE (visualizer of the live-audio core — synthetic in-browser, or real device via the Node host) -->
         <section class="pane" id="pane-live">
           <div class="card">
-            <div class="h">Live visualizer <span class="ctxhint">(synthetic · browser-safe)</span></div>
+            <div class="h">Live visualizer</div>
             <div class="b">
               <canvas id="liveCanvas" style="width:100%;aspect-ratio:1/1;background:#0b1020;border-radius:10px;display:block;cursor:crosshair"></canvas>
-              <div class="ctxhint" style="margin-top:6px">Drag in the canvas to move the talker (pink). The beam (teal) re-aims to the SRP-PHAT detection (gold ticks) when Auto-steer is Follow. Real 8-ch capture is Node-only — this runs the pure-DSP core on a synthetic plane-wave talker.</div>
+              <div class="ctxhint" style="margin-top:6px">Top-down array view. Beam = teal arrow; SRP-PHAT detections = gold ticks; talker = pink (synthetic mode — drag to move it).</div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="h">Source &amp; device</div>
+            <div class="b">
+              <div class="f"><label class="fl">Audio source</label>
+                <select class="in" id="liveSource"><option value="synthetic" selected>Synthetic (browser, no hardware)</option><option value="device">Live device (Node host)</option></select>
+              </div>
+              <div id="liveDeviceRow" style="display:none">
+                <div class="f"><label class="fl">Input device (mic array)</label><select class="in" id="liveInput"><option>—</option></select></div>
+                <div class="f"><label class="fl">Output device (monitor)</label><select class="in" id="liveOutput"><option value="">Default output</option></select></div>
+                <div class="row" style="margin-top:6px"><button class="btn sm ghost" id="liveRefresh">Refresh devices</button></div>
+                <div class="ctxhint" id="liveDeviceHint" style="margin-top:6px">Needs the Node host (<code>npm run web</code>) with <code>naudiodon2</code> installed + the POLARIS attached. Live audio plays on the chosen output, not in the browser.</div>
+              </div>
             </div>
           </div>
           <div class="card">
@@ -543,7 +557,7 @@
                 <select class="in" id="liveClean"><option value="off" selected>Off</option><option value="gate">Gate</option><option value="omlsa">OM-LSA</option><option value="wiener">Wiener</option></select>
               </div>
               <label class="radio" style="margin-top:6px"><input type="checkbox" id="liveDereverb"/> Dereverb</label>
-              <div class="row end" style="margin-top:6px">
+              <div class="row end" id="liveSynthControls" style="margin-top:6px">
                 <div class="f"><label class="fl">Talker freq (Hz)</label><input class="in" id="liveFreq" type="number" min="100" max="8000" step="50" value="1500"/></div>
                 <div class="f"><label class="fl">Background noise</label><input class="in" id="liveNoise" type="range" min="0" max="0.3" step="0.01" value="0"/></div>
               </div>
@@ -552,7 +566,7 @@
           </div>
           <div class="card">
             <div class="h">Live readout</div>
-            <div class="b"><div id="liveReadout" class="ctxhint">idle — press Start (or it begins when you open this tab)</div></div>
+            <div class="b"><div id="liveReadout" class="ctxhint">idle — open this tab to begin (synthetic), or pick a Live device and Connect</div></div>
           </div>
         </section>
       </div>
@@ -1726,7 +1740,7 @@ render();
 requestAnimationFrame(redraw);
 </script>
 
-<!-- ============ Live visualizer (synthetic; drives the browser-safe live core) ============ -->
+<!-- ============ Live visualizer — synthetic (browser) OR real device (Node host) ============ -->
 <script type="module">
 import * as LIVE from './dist/live/index.js';
 const cvs = document.getElementById('liveCanvas');
@@ -1735,13 +1749,17 @@ if (cvs) {
   const SR = 44100, N = 256, geom = LIVE.sensibel8(0.04), D2R = Math.PI / 180;
   const $ = (id) => document.getElementById(id);
   const steerSel = $('liveSteer'), cleanSel = $('liveClean'), derevChk = $('liveDereverb'),
-        freqIn = $('liveFreq'), noiseIn = $('liveNoise'), toggleBtn = $('liveToggle'), readout = $('liveReadout');
-  let talkerAz = 60, running = false, raf = 0, rng = 12345, engine = null, adapter = null, lastOut = null, dragging = false;
+        freqIn = $('liveFreq'), noiseIn = $('liveNoise'), toggleBtn = $('liveToggle'), readout = $('liveReadout'),
+        sourceSel = $('liveSource'), deviceRow = $('liveDeviceRow'), inputSel = $('liveInput'), outputSel = $('liveOutput'),
+        refreshBtn = $('liveRefresh'), deviceHint = $('liveDeviceHint'), synthCtl = $('liveSynthControls');
+  let talkerAz = 60, running = false, raf = 0, rng = 12345, engine = null, adapter = null, lastOut = null, dragging = false, es = null;
+  const mode = () => sourceSel.value; // 'synthetic' | 'device'
 
   const steerCfg = () => steerSel.value === 'manual' ? { mode: 'manual' } : { mode: 'follow', sector: { centerDeg: 0, halfWidthDeg: 175 } };
   const cleanCfg = () => { const e = cleanSel.value, dr = derevChk.checked; if (e === 'off' && !dr) return undefined; return { engine: e, ...(dr ? { dereverb: {} } : {}) }; };
   const azVec = (az) => [Math.sin(az * D2R), -Math.cos(az * D2R)]; // 0°=+Y(up), clockwise; screen up = -y
 
+  // ---------- synthetic (browser) ----------
   function build() {
     if (engine) engine.stop();
     adapter = new LIVE.ManualCaptureAdapter({ channels: geom.nChannels });
@@ -1751,42 +1769,89 @@ if (cvs) {
     engine.start();
   }
   function tick() {
-    if (!running) return;
+    if (!running || mode() !== 'synthetic') return;
     const blk = LIVE.planeWaveChannels(geom, talkerAz, 90, (+freqIn.value) || 1500, SR, N);
     const amp = (+noiseIn.value) || 0;
     if (amp > 0) for (const ch of blk) for (let i = 0; i < ch.length; i++) { rng = (rng * 1103515245 + 12345) & 0x7fffffff; ch[i] += amp * ((rng / 0x7fffffff) * 2 - 1); }
-    adapter.push(blk);
-    draw();
-    raf = requestAnimationFrame(tick);
+    adapter.push(blk); draw(); raf = requestAnimationFrame(tick);
   }
+  function startSynth() { if (running) return; build(); running = true; toggleBtn.textContent = 'Stop'; tick(); }
+  function stopSynth() { running = false; cancelAnimationFrame(raf); if (engine) { engine.stop(); engine = null; } toggleBtn.textContent = 'Start'; }
+
+  // ---------- live device (Node host) ----------
+  async function refreshDevices() {
+    if (!deviceHint) return;
+    deviceHint.textContent = 'querying devices…';
+    try {
+      const d = await (await fetch('/api/live/devices')).json();
+      if (!d.available) { deviceHint.textContent = d.error || 'no audio backend'; inputSel.innerHTML = '<option>—</option>'; outputSel.innerHTML = '<option value="">Default output</option>'; return; }
+      inputSel.innerHTML = d.inputs.length ? d.inputs.map((x) => '<option>' + x.name + '</option>').join('') : '<option>(no input devices)</option>';
+      outputSel.innerHTML = '<option value="">Default output</option>' + d.outputs.map((x) => '<option>' + x.name + '</option>').join('');
+      const pol = d.inputs.find((x) => /polaris/i.test(x.name)); if (pol) inputSel.value = pol.name;
+      deviceHint.textContent = d.inputs.length + ' input · ' + d.outputs.length + ' output device(s) found';
+    } catch (e) { deviceHint.textContent = 'device query failed (' + e.message + ') — is the Node host (npm run web) running?'; }
+  }
+  async function startDevice() {
+    if (running) return;
+    const cc = cleanCfg();
+    const body = { inputDevice: inputSel.value, outputDevice: outputSel.value, sampleRate: SR, autoSteer: steerCfg(), ...(cc ? { cleaning: cc } : {}) };
+    if (deviceHint) deviceHint.textContent = 'connecting…';
+    let d; try { d = await (await fetch('/api/live/start', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })).json(); }
+    catch (e) { if (deviceHint) deviceHint.textContent = 'connect failed: ' + e.message; return; }
+    if (!d.ok) { if (deviceHint) deviceHint.textContent = 'connect failed: ' + (d.error || '?'); return; }
+    if (deviceHint) deviceHint.textContent = 'running: ' + d.input + ' → ' + d.output;
+    running = true; toggleBtn.textContent = 'Disconnect';
+    es = new EventSource('/api/live/telemetry');
+    es.onmessage = (ev) => { try { const t = JSON.parse(ev.data); if (t) { lastOut = t; draw(); } } catch {} };
+  }
+  async function stopDevice() {
+    if (es) { es.close(); es = null; }
+    try { await fetch('/api/live/stop', { method: 'POST' }); } catch {}
+    running = false; toggleBtn.textContent = 'Connect';
+  }
+
+  // ---------- shared render ----------
   function draw() {
     const w = cvs.width = cvs.clientWidth, h = cvs.height = cvs.clientWidth, cx = w / 2, cy = h / 2, R = Math.min(w, h) * 0.30;
     ctx.fillStyle = '#0b1020'; ctx.fillRect(0, 0, w, h);
     ctx.strokeStyle = '#23304d'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(cx, cy, R * 1.6, 0, 2 * Math.PI); ctx.stroke();
-    const sc = R / 0.05; // metres → px (ring radius ≈ 40mm fills ~0.8·R)
-    ctx.fillStyle = '#6d8bff';
-    for (let m = 0; m < geom.nChannels; m++) { const e = geom.elements[m]; const x = cx + e[0] * sc, y = cy - e[1] * sc; ctx.beginPath(); ctx.arc(x, y, 3, 0, 2 * Math.PI); ctx.fill(); }
+    const sc = R / 0.05; ctx.fillStyle = '#6d8bff';
+    for (let m = 0; m < geom.nChannels; m++) { const e = geom.elements[m]; ctx.beginPath(); ctx.arc(cx + e[0] * sc, cy - e[1] * sc, 3, 0, 2 * Math.PI); ctx.fill(); }
     if (lastOut && lastOut.detected) { ctx.strokeStyle = '#f7c948'; ctx.lineWidth = 2;
       for (const az of lastOut.detected.azimuths) { const [vx, vy] = azVec(az); ctx.beginPath(); ctx.moveTo(cx + vx * R * 1.42, cy + vy * R * 1.42); ctx.lineTo(cx + vx * R * 1.6, cy + vy * R * 1.6); ctx.stroke(); } }
-    const look = engine ? engine.azimuthDeg : talkerAz, [bx, by] = azVec(look);
+    const look = (lastOut && typeof lastOut.azimuthDeg === 'number') ? lastOut.azimuthDeg : talkerAz, [bx, by] = azVec(look);
     ctx.strokeStyle = '#2dd4bf'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + bx * R * 1.35, cy + by * R * 1.35); ctx.stroke();
-    const [tx, ty] = azVec(talkerAz); ctx.fillStyle = '#ff7ab6'; ctx.beginPath(); ctx.arc(cx + tx * R * 1.6, cy + ty * R * 1.6, 6, 0, 2 * Math.PI); ctx.fill();
+    if (mode() === 'synthetic') { const [tx, ty] = azVec(talkerAz); ctx.fillStyle = '#ff7ab6'; ctx.beginPath(); ctx.arc(cx + tx * R * 1.6, cy + ty * R * 1.6, 6, 0, 2 * Math.PI); ctx.fill(); }
     if (lastOut) {
       const det = lastOut.detected;
       const doa = det && det.azimuths.length ? det.azimuths.map((a, i) => a.toFixed(0) + '°(' + det.salienceDb[i].toFixed(1) + 'dB)').join(', ') : '—';
       const clean = lastOut.cleaning ? ' · clean ' + lastOut.cleaning.engine + (lastOut.cleaning.dereverb ? '+dereverb' : '') : '';
-      readout.textContent = 'talker ' + talkerAz.toFixed(0) + '° · look ' + look.toFixed(1) + '° · DOA ' + doa + ' · RMS ' + lastOut.rmsDb.toFixed(1) + ' / peak ' + lastOut.peakDb.toFixed(1) + ' dB · ' + (lastOut.mode || 'manual') + clean;
+      const tk = mode() === 'synthetic' ? 'talker ' + talkerAz.toFixed(0) + '° · ' : '';
+      readout.textContent = tk + 'look ' + look.toFixed(1) + '° · DOA ' + doa + ' · RMS ' + lastOut.rmsDb.toFixed(1) + ' / peak ' + lastOut.peakDb.toFixed(1) + ' dB · ' + (lastOut.mode || 'manual') + clean;
     }
   }
-  function setFromPointer(ev) { const r = cvs.getBoundingClientRect(); const dx = ev.clientX - r.left - cvs.clientWidth / 2, dy = ev.clientY - r.top - cvs.clientWidth / 2; if (dx === 0 && dy === 0) return; talkerAz = ((Math.atan2(dx, -dy) * 180 / Math.PI) + 360) % 360; }
+  function setFromPointer(ev) { if (mode() !== 'synthetic') return; const r = cvs.getBoundingClientRect(); const dx = ev.clientX - r.left - cvs.clientWidth / 2, dy = ev.clientY - r.top - cvs.clientWidth / 2; if (dx === 0 && dy === 0) return; talkerAz = ((Math.atan2(dx, -dy) * 180 / Math.PI) + 360) % 360; }
   cvs.addEventListener('pointerdown', (e) => { dragging = true; setFromPointer(e); });
   window.addEventListener('pointermove', (e) => { if (dragging) setFromPointer(e); });
   window.addEventListener('pointerup', () => { dragging = false; });
-  [steerSel, cleanSel, derevChk, freqIn].forEach((el) => el.addEventListener('change', () => { if (running) build(); }));
-  function start() { if (running) return; build(); running = true; toggleBtn.textContent = 'Stop'; tick(); }
-  function stop() { running = false; cancelAnimationFrame(raf); if (engine) engine.stop(); toggleBtn.textContent = 'Start'; }
-  toggleBtn.addEventListener('click', () => running ? stop() : start());
-  document.getElementById('tabs').addEventListener('click', (e) => { const b = e.target.closest('button[data-tab]'); if (!b) return; if (b.dataset.tab === 'live') start(); else stop(); });
+
+  // ---------- mode + control wiring ----------
+  function startCurrent() { mode() === 'device' ? startDevice() : startSynth(); }
+  function stopCurrent() { if (mode() === 'device') stopDevice(); else stopSynth(); }
+  toggleBtn.addEventListener('click', () => running ? stopCurrent() : startCurrent());
+  [steerSel, cleanSel, derevChk, freqIn].forEach((el) => el.addEventListener('change', () => { if (!running) return; if (mode() === 'device') { stopDevice().then(startDevice); } else build(); }));
+  function applyMode() {
+    stopCurrent();
+    const dev = mode() === 'device';
+    if (deviceRow) deviceRow.style.display = dev ? '' : 'none';
+    if (synthCtl) synthCtl.style.display = dev ? 'none' : '';
+    toggleBtn.textContent = dev ? 'Connect' : 'Start';
+    lastOut = null; draw();
+    if (dev) refreshDevices();
+  }
+  sourceSel.addEventListener('change', applyMode);
+  if (refreshBtn) refreshBtn.addEventListener('click', refreshDevices);
+  document.getElementById('tabs').addEventListener('click', (e) => { const b = e.target.closest('button[data-tab]'); if (!b) return; if (b.dataset.tab === 'live') { if (mode() === 'synthetic') startSynth(); } else stopCurrent(); });
 }
 </script>
 </body>

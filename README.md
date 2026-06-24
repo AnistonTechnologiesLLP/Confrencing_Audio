@@ -517,6 +517,14 @@ to stereo), so you can drag the talker, toggle auto-steer / noise-suppression / 
 track the talker via SRP-PHAT — all visualized on a top-down room canvas. The synthetic driver is the
 browser-safe `ManualCaptureAdapter` (the host feeds one block per animation frame via `push(channels)`).
 
+The Live tab also has a **Live device (Node host)** mode — **Input / Output device pickers** + a Connect
+button, like the Python LIVE panel. The `npm run web` server (`serve.mjs`) exposes
+`/api/live/{devices,start,stop,telemetry}`: it enumerates devices, runs a `LiveEngine` on the chosen POLARIS
+input, plays the cleaned mono to the chosen output, and streams telemetry (levels/DOA/look) to the canvas
+over SSE. This mode needs the optional **`naudiodon2`** addon installed and the array attached on the
+machine running the server (browsers can't open the 8-channel device themselves); otherwise it reports
+"unavailable" and you stay in synthetic mode.
+
 ```ts
 import { LiveEngine } from 'conferencing-audio-pipeline/live';
 import { NodeCaptureAdapter, NodeOutputSink } from 'conferencing-audio-pipeline/live-node';
