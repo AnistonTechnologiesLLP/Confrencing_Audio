@@ -14,7 +14,7 @@ export const DEREVERB_BETA = 1.6;
 export const DEREVERB_GMIN_DB = -10;
 export const DEREVERB_EARLY_MS = 48;
 
-export interface DereverbOptions extends SpectralOptions {
+export interface DereverbOptions extends Omit<SpectralOptions, 'floorDb'> {
   t60?: number;
   beta?: number;
   gminDb?: number;

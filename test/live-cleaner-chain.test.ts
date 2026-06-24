@@ -31,4 +31,23 @@ describe('ChainedCleaner', () => {
     new ChainedCleaner([s1, s2]).reset();
     expect([a, b]).toEqual([1, 1]);
   });
+
+  it('empty chain is identity (returns the same block reference)', () => {
+    const chain = new ChainedCleaner([]);
+    const block = Float32Array.of(1, 2, 3);
+    expect(chain.process(block, false)).toBe(block);
+  });
+
+  it('forwards noiseGate unchanged to every stage for both false and true', () => {
+    const received: boolean[] = [];
+    const spy = (id: number): Cleaner => ({
+      process: (b, ng) => { received.push(ng); void id; return b; },
+      reset: () => {},
+    });
+    const chain = new ChainedCleaner([spy(0), spy(1)]);
+    const block = Float32Array.of(1);
+    chain.process(block, false);
+    chain.process(block, true);
+    expect(received).toEqual([false, false, true, true]);
+  });
 });
