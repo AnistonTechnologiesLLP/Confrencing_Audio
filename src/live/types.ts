@@ -53,6 +53,16 @@ export interface BeamOutput {
   doaActive?: boolean;
   mode?: AutoSteerMode;
   lockedTarget?: { azimuthDeg: number; seatId?: string } | null;
+  cleaning?: { engine: string; preserved: boolean };
+}
+
+/** Opt-in post-beam noise suppression config. */
+export interface CleaningConfig {
+  engine: 'off' | 'gate' | 'omlsa' | 'wiener';
+  /** 0..1 — denoiser strength (gentler at lower values). */
+  strength?: number;
+  /** Wrap the cleaner in the level-preserving makeup gain. */
+  preserveLevel?: boolean;
 }
 
 /** Engine configuration. */
@@ -64,4 +74,5 @@ export interface LiveConfig {
   offNadirDeg?: number;
   taps?: number;
   autoSteer?: AutoSteerConfig;
+  cleaning?: CleaningConfig;
 }

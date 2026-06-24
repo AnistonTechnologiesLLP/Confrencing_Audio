@@ -27,6 +27,15 @@ The JSON **config schema** is versioned independently via `CONFIG_VERSION`
   Phase-1 behavior). `BeamOutput` gains `detected`/`doaActive`/`mode`/`lockedTarget`. Lock-to-seat
   reuses the seat-mapper. Azimuth-only (off-nadir 90°), band 300–3800 Hz, single-talker follow; the
   FFT adds no dependency. Ported from the Python engine's `doa`/`autosteer`/`tracking`.
+- **Post-beam noise suppression (Phase 3a)** — opt-in cleaning of the beamformed mono via an STFT
+  denoiser (`spectral-processor.ts` + `omlsa.ts`, fed by a new inverse real FFT in `fft.ts`): a
+  VAD-independent minimum-statistics noise floor + gate/OM-LSA/Wiener gain laws, plus a
+  level-preserving makeup (`level-preserving-cleaner.ts`) that restores the ~5–7 dB denoisers cut
+  from the talker (SNR-neutral, boost-only, peak-limited). Wired into `LiveEngine` behind
+  `LiveConfig.cleaning` (`engine: 'off' | 'gate' | 'omlsa' | 'wiener'`; default `off` = Phase-2
+  behavior). `BeamOutput.cleaning` surfaces the active stage. Pure DSP — the exponential integral is
+  vendored, so it adds no dependency. Ported from the Python `_PostNoiseSuppressor` / `StreamingCleaner`
+  / `_LevelPreservingCleaner`. Dereverb / AEC / AGC are later sub-phases; DFN3 (ONNX) deferred.
 - **Microphone-array mounting bearing** (schema **v4 → v5**) — `MicrophoneArray` gains
   an optional `bearingDeg` (compass heading of the array's 0° reference, 0° = +Y), so a
   detected array-relative azimuth can be mapped into room coordinates — the prerequisite

@@ -2,13 +2,16 @@
  * Wires a CaptureAdapter to the live beamformer + meter, emitting a BeamOutput
  * per captured block. Pure orchestration (no node:* / no audio I/O of its own).
  */
-import type { CaptureAdapter, LiveConfig, BeamOutput, AutoSteerMode } from './types.js';
+import type { CaptureAdapter, LiveConfig, BeamOutput, AutoSteerMode, CleaningConfig } from './types.js';
 import { StreamingDelaySumBeam } from './beam.js';
 import { LevelMeter } from './meter.js';
 import { StreamingCovarianceAccumulator } from './covariance.js';
 import { detect, type DoaResult, type DetectOptions } from './doa.js';
 import { AutoSteerController, type AutoSteerOptions } from './autosteer.js';
 import { seatAzimuthForArray } from '../seat-mapper/seat-mapper.js';
+import { StreamingSpectralProcessor } from './spectral-processor.js';
+import { OmlsaProcessor } from './omlsa.js';
+import { LevelPreservingCleaner, type Cleaner } from './level-preserving-cleaner.js';
 
 export class LiveEngine {
   private readonly adapter: CaptureAdapter;
@@ -26,6 +29,8 @@ export class LiveEngine {
   private _mode: AutoSteerMode | undefined = 'manual';
   private _lockedTarget: { azimuthDeg: number; seatId?: string } | null = null;
   private lastDoa: DoaResult | null = null;
+  private cleaner: Cleaner | null = null;
+  private cleaningInfo: { engine: string; preserved: boolean } | null = null;
 
   constructor(adapter: CaptureAdapter, config: LiveConfig) {
     this.adapter = adapter;
@@ -63,6 +68,18 @@ export class LiveEngine {
       this.autosteer = new AutoSteerController(opts);
       this.doaOpts = as.doa ?? {};
     }
+    // --- Phase 3a: optional post-beam noise suppression ---
+    const cc: CleaningConfig | undefined = config.cleaning;
+    if (cc !== undefined && cc.engine !== 'off') {
+      const sr = config.sampleRate ?? 44100;
+      const strength = cc.strength ?? 1;
+      const inner: Cleaner =
+        cc.engine === 'gate'
+          ? new StreamingSpectralProcessor(sr, { amount: strength })
+          : new OmlsaProcessor(sr, { amount: strength, mode: cc.engine });
+      this.cleaner = cc.preserveLevel ? new LevelPreservingCleaner(inner) : inner;
+      this.cleaningInfo = { engine: cc.engine, preserved: cc.preserveLevel === true };
+    }
   }
 
   get azimuthDeg(): number {
@@ -89,7 +106,12 @@ export class LiveEngine {
       channels: this.config.geom.nChannels,
       sampleRate: this.config.sampleRate ?? 44100,
       onBlock: (channels) => {
-        const mono: Float32Array = this.beam.process(channels);
+        let mono: Float32Array = this.beam.process(channels);
+        // Phase 3a: optional post-beam noise suppression (the meter sees the cleaned signal).
+        if (this.cleaner) {
+          const noiseGate = this.lastDoa ? !this.lastDoa.active : false; // VAD from the PREVIOUS DOA cycle (up to ~detectionHops blocks stale) — fine: the min-stat floor is VAD-independent and the makeup tracks slowly
+          mono = this.cleaner.process(mono, noiseGate);
+        }
         this.meter.update(mono);
         // Phase 2: feed covariance + run DOA/steer on the configured hop cadence.
         if (this.cov && this.autosteer) {
@@ -121,6 +143,7 @@ export class LiveEngine {
                 lockedTarget: this._lockedTarget,
               }
             : {}),
+          ...(this.cleaningInfo !== null ? { cleaning: this.cleaningInfo } : {}),
         });
       },
     });
