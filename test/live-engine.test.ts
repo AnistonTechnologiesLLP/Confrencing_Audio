@@ -115,3 +115,64 @@ describe('LiveEngine auto-steer', () => {
     expect(last).toBe(0); // unchanged
   });
 });
+
+describe('LiveEngine cleaning', () => {
+  it('absent cleaning emits no cleaning field (byte-identical to Phase 2)', async () => {
+    const geom = sensibel8(0.04);
+    const mock = new MockCaptureAdapter({ channels: 8, azimuthDeg: 90, blocks: 3, blockSize: 256, freqHz: 1500 });
+    const engine = new LiveEngine(mock, { geom, deviceName: 'MOCK-8', sampleRate: 44100, azimuthDeg: 90 });
+    let cleaningField: unknown = 'unset';
+    engine.onOutput((o) => { cleaningField = (o as { cleaning?: unknown }).cleaning; });
+    await engine.start();
+    expect(cleaningField).toBeUndefined();
+  });
+
+  it('omlsa cleaning: BeamOutput.cleaning reflects the engine config', async () => {
+    const geom = sensibel8(0.04);
+    const mock = new MockCaptureAdapter({ channels: 8, azimuthDeg: 90, blocks: 60, blockSize: 256, freqHz: 1500 });
+    const engine = new LiveEngine(mock, {
+      geom, deviceName: 'MOCK-8', sampleRate: 44100, azimuthDeg: 90,
+      cleaning: { engine: 'omlsa' },
+    });
+    const cleaningFields: Array<{ engine: string; preserved: boolean }> = [];
+    let onRms = 0;
+    engine.onOutput((o) => {
+      if (o.cleaning !== undefined) cleaningFields.push(o.cleaning);
+      // accumulate the last block's RMS
+      let s = 0;
+      for (const v of o.mono) s += v * v;
+      onRms = Math.sqrt(s / o.mono.length);
+    });
+    await engine.start();
+    expect(cleaningFields.length).toBeGreaterThan(0);
+    for (const f of cleaningFields) {
+      expect(f.engine).toBe('omlsa');
+      expect(f.preserved).toBe(false);
+    }
+    // NR never amplifies: cleaned tail RMS ≤ off-path RMS + tiny epsilon
+    // (the off-path produces a beam-coherent sinusoid; NR ≤ passthrough)
+    const offMock = new MockCaptureAdapter({ channels: 8, azimuthDeg: 90, blocks: 60, blockSize: 256, freqHz: 1500 });
+    const offEngine = new LiveEngine(offMock, { geom, deviceName: 'MOCK-8', sampleRate: 44100, azimuthDeg: 90 });
+    let offRms = 0;
+    offEngine.onOutput((o) => {
+      let s = 0;
+      for (const v of o.mono) s += v * v;
+      offRms = Math.sqrt(s / o.mono.length);
+    });
+    await offEngine.start();
+    expect(onRms).toBeLessThanOrEqual(offRms + 1e-6);
+  });
+
+  it('omlsa with preserveLevel:true sets preserved=true in BeamOutput.cleaning', async () => {
+    const geom = sensibel8(0.04);
+    const mock = new MockCaptureAdapter({ channels: 8, azimuthDeg: 90, blocks: 3, blockSize: 256, freqHz: 1500 });
+    const engine = new LiveEngine(mock, {
+      geom, deviceName: 'MOCK-8', sampleRate: 44100, azimuthDeg: 90,
+      cleaning: { engine: 'omlsa', preserveLevel: true },
+    });
+    let preserved: boolean | undefined;
+    engine.onOutput((o) => { if (o.cleaning !== undefined) preserved = o.cleaning.preserved; });
+    await engine.start();
+    expect(preserved).toBe(true);
+  });
+});

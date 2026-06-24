@@ -34,4 +34,8 @@ export {
 } from './doa.js';
 export { TalkerTracker } from './tracker.js';
 export { AutoSteerController, type AutoSteerOptions, type SectorSpec } from './autosteer.js';
-export type { AutoSteerMode, AutoSteerConfig } from './types.js';
+export type { AutoSteerMode, AutoSteerConfig, CleaningConfig } from './types.js';
+export { StreamingSpectralProcessor, NR_FRAME, NR_HOP, type SpectralOptions } from './spectral-processor.js';
+export { OmlsaProcessor, expE1, type OmlsaOptions } from './omlsa.js';
+export { ExponentialTracker } from './exponential-tracker.js';
+export { LevelPreservingCleaner, type Cleaner } from './level-preserving-cleaner.js';
