@@ -109,7 +109,7 @@ export class LiveEngine {
         let mono: Float32Array = this.beam.process(channels);
         // Phase 3a: optional post-beam noise suppression (the meter sees the cleaned signal).
         if (this.cleaner) {
-          const noiseGate = this.lastDoa ? !this.lastDoa.active : false;
+          const noiseGate = this.lastDoa ? !this.lastDoa.active : false; // VAD from the PREVIOUS DOA cycle (up to ~detectionHops blocks stale) — fine: the min-stat floor is VAD-independent and the makeup tracks slowly
           mono = this.cleaner.process(mono, noiseGate);
         }
         this.meter.update(mono);

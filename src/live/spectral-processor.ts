@@ -114,6 +114,7 @@ export class StreamingSpectralProcessor {
   }
 
   /** Accumulate the block, process complete hops; when `emit`, return the cleaned mono. */
+  // noiseGate is unused by the base (the min-stat floor is VAD-independent); a subclass needing per-call VAD must override process()
   private feedAndFrame(block: Float32Array, _noiseGate: boolean, emit: boolean): Float32Array | null {
     const n = block.length;
     if (this.fill + n > this.fifo.length) {
@@ -158,6 +159,7 @@ export class StreamingSpectralProcessor {
     if (this.subFrame >= this.subLen) {
       this.minbuf[this.subIdx]!.set(this.submin);
       this.subIdx = (this.subIdx + 1) % this.subN;
+      // new sub-window starts tracking from the current smoothed power (minimum-statistics)
       for (let k = 0; k < nb; k++) this.submin[k] = this.pSmooth[k]!;
       this.subFrame = 0;
     }
@@ -176,10 +178,9 @@ export class StreamingSpectralProcessor {
     gs[nb - 1] = g[nb - 1]!;
     for (let k = 1; k < nb - 1; k++) gs[k] = 0.25 * g[k - 1]! + 0.5 * g[k]! + 0.25 * g[k + 1]!;
     for (let k = 0; k < nb; k++) {
-      let v = this.gainAlpha * gs[k]! + (1 - this.gainAlpha) * this.gainPrev[k]!;
-      if (this.amount < 1) v = this.amount * v + (1 - this.amount);
+      const v = this.gainAlpha * gs[k]! + (1 - this.gainAlpha) * this.gainPrev[k]!;
       this.gainPrev[k] = v;
-      gs[k] = v;
+      gs[k] = this.amount < 1 ? this.amount * v + (1 - this.amount) : v;
     }
     // apply, irfft, overlap-add
     const yr = new Float64Array(nb);

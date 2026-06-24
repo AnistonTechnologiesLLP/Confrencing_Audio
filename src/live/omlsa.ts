@@ -31,8 +31,8 @@ export interface OmlsaOptions extends SpectralOptions {
 export class OmlsaProcessor extends StreamingSpectralProcessor {
   private readonly mode: 'omlsa' | 'wiener' | 'gate';
   private readonly ddAlpha: number;
-  private readonly gFloorOm: number; // amplitude floor 10^(gmin/10) — note /10 (power) per the Python
-  private readonly xiFloor: number;
+  private readonly gFloorOm: number; // amplitude gain floor 10^(gmin/20) (the OM-LSA Gmin bed)
+  private readonly xiFloor: number; // power a-priori-SNR floor 10^(gmin/10)
   private readonly gammaThresh: number;
   private readonly nuMin: number;
   private readonly nuMax: number;
@@ -44,7 +44,7 @@ export class OmlsaProcessor extends StreamingSpectralProcessor {
     this.mode = opts.mode ?? 'omlsa';
     this.ddAlpha = opts.cleanerAlpha ?? 0.985;
     const gminDb = opts.gminDb ?? -18;
-    this.gFloorOm = Math.pow(10, gminDb / 10);
+    this.gFloorOm = Math.pow(10, gminDb / 20);
     this.xiFloor = Math.pow(10, gminDb / 10);
     this.gammaThresh = opts.gammaThresh ?? 2.0;
     this.nuMin = opts.nuMin ?? 1e-3;

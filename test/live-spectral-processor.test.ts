@@ -6,7 +6,21 @@ void NR_HOP; // exported constant — referenced to satisfy noUnusedLocals
 function rms(x: Float32Array): number { let s = 0; for (const v of x) s += v * v; return Math.sqrt(s / x.length); }
 
 describe('StreamingSpectralProcessor', () => {
-  it('Hann 50% overlap satisfies COLA (window sum ≈ const)', () => {
+  it('Hann 50% overlap: window sum is constant (COLA)', () => {
+    // Build the same Hann window the processor uses: 0.5 - 0.5*cos(2πi/(F-1)), F=512
+    const F = 512;
+    const H = F / 2; // 256
+    const win = new Float64Array(F);
+    for (let i = 0; i < F; i++) win[i] = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (F - 1));
+    // At 50% overlap the window sum should be approximately constant across all i in [0, H)
+    const midSum = win[128]! + win[128 + H]!;
+    for (let i = 0; i < H; i++) {
+      const s = win[i]! + win[i + H]!;
+      expect(s).toBeCloseTo(midSum, 2);
+    }
+  });
+
+  it('tone survives through the processor (COLA passthrough quality)', () => {
     // Verified indirectly: the processor reconstructs a passed signal during warmup byte-identically,
     // and after warmup the analysis-window OLA is unity-gain. Here we check the COLA window-sum.
     const p = new StreamingSpectralProcessor(44100, { warmupFrames: 0 });
@@ -45,11 +59,26 @@ describe('StreamingSpectralProcessor', () => {
     expect(rms(out)).toBeLessThan(rms(noisy)); // steady noise is suppressed
   });
 
-  it('bridges odd block sizes (FIFO) and reset() clears state', () => {
+  it('bridges odd block sizes (FIFO), reset clears state, and reset-equivalence holds', () => {
     const p = new StreamingSpectralProcessor(44100, { warmupFrames: 1 });
     const x = new Float32Array(300).fill(0.05);
-    expect(() => p.process(x, false)).not.toThrow();
+    const out1 = p.process(x, false);
+    // output has correct length and is all finite
+    expect(out1.length).toBe(300);
+    expect([...out1].every((v) => Number.isFinite(v))).toBe(true);
+
+    // After reset, same input produces the same result as a fresh processor
     p.reset();
     expect(p.engaged).toBe(false);
+
+    const fresh = new StreamingSpectralProcessor(44100, { warmupFrames: 1 });
+    const xr = new Float32Array(300).fill(0.05);
+    const outFresh = fresh.process(xr, false);
+    const outReset = p.process(new Float32Array(300).fill(0.05), false);
+    // reset-equivalence: output arrays have the same values
+    expect(outReset.length).toBe(outFresh.length);
+    for (let i = 0; i < outReset.length; i++) {
+      expect(outReset[i]!).toBeCloseTo(outFresh[i]!, 9);
+    }
   });
 });

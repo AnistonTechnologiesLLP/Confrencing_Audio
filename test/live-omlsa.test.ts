@@ -36,5 +36,16 @@ describe('OmlsaProcessor', () => {
     for (let b = 0; b < 40; b++) p.process(whiteNoise(256, 5), true);
     const out = p.process(whiteNoise(1024, 5), true);
     expect([...out].every((v) => Number.isFinite(v))).toBe(true);
+    // gate attenuates noise relative to raw input (same seed)
+    expect(rms(out)).toBeLessThan(rms(whiteNoise(1024, 5)));
+  });
+
+  it('wiener mode attenuates steady noise', () => {
+    const p = new OmlsaProcessor(44100, { warmupFrames: 2, mode: 'wiener' });
+    for (let b = 0; b < 40; b++) p.process(whiteNoise(256, 33 + b), true);
+    const noisy = whiteNoise(2048, 99);
+    const out = p.process(whiteNoise(2048, 99), true);
+    expect(rms(out)).toBeLessThan(rms(noisy));
+    expect([...out].every((v) => Number.isFinite(v))).toBe(true);
   });
 });

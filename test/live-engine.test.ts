@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { MockCaptureAdapter } from '../src/live/mock-adapter.js';
+import { MockCaptureAdapter, planeWaveChannels } from '../src/live/mock-adapter.js';
 import { StreamingDelaySumBeam } from '../src/live/beam.js';
 import { LiveEngine } from '../src/live/engine.js';
 import { sensibel8 } from '../src/beamformer/geometry.js';
+import type { CaptureAdapter, CaptureDevice, CaptureStartOptions } from '../src/live/types.js';
 import * as live from '../src/live/index.js';
 
 function rms(x: Float32Array): number {
@@ -174,5 +175,93 @@ describe('LiveEngine cleaning', () => {
     engine.onOutput((o) => { if (o.cleaning !== undefined) preserved = o.cleaning.preserved; });
     await engine.start();
     expect(preserved).toBe(true);
+  });
+
+  it('engine:off emits no cleaning field', async () => {
+    const geom = sensibel8(0.04);
+    const mock = new MockCaptureAdapter({ channels: 8, azimuthDeg: 90, blocks: 3, blockSize: 256, freqHz: 1500 });
+    const engine = new LiveEngine(mock, {
+      geom, deviceName: 'MOCK-8', sampleRate: 44100, azimuthDeg: 90,
+      cleaning: { engine: 'off' },
+    });
+    let cleaningField: unknown = 'unset';
+    engine.onOutput((o) => { cleaningField = (o as { cleaning?: unknown }).cleaning; });
+    await engine.start();
+    expect(cleaningField).toBeUndefined();
+  });
+
+  it('engine:gate emits cleaning={engine:gate, preserved:false}', async () => {
+    const geom = sensibel8(0.04);
+    const mock = new MockCaptureAdapter({ channels: 8, azimuthDeg: 90, blocks: 3, blockSize: 256, freqHz: 1500 });
+    const engine = new LiveEngine(mock, {
+      geom, deviceName: 'MOCK-8', sampleRate: 44100, azimuthDeg: 90,
+      cleaning: { engine: 'gate' },
+    });
+    let cleaningField: { engine: string; preserved: boolean } | undefined;
+    engine.onOutput((o) => { if (o.cleaning !== undefined) cleaningField = o.cleaning; });
+    await engine.start();
+    expect(cleaningField).toBeDefined();
+    expect(cleaningField).toEqual({ engine: 'gate', preserved: false });
+  });
+
+  it('omlsa NR does not amplify steady noise (cleaned <= uncleaned)', async () => {
+    // Adapter that emits plane-wave tone + seeded LCG noise on every channel
+    const geom = sensibel8(0.04);
+    const BLOCKS = 80;
+    const BLOCK_SIZE = 256;
+    const SR = 44100;
+
+    class NoisyAdapter implements CaptureAdapter {
+      private seed: number;
+      constructor(seed: number) { this.seed = seed; }
+      enumerate(): Promise<CaptureDevice[]> {
+        return Promise.resolve([{ id: 'noisy', name: 'NOISY', maxInputChannels: 8, defaultSampleRate: SR }]);
+      }
+      start(opts: CaptureStartOptions): Promise<void> {
+        for (let b = 0; b < BLOCKS; b++) {
+          const tone = planeWaveChannels(geom, 90, 90, 1500, SR, BLOCK_SIZE);
+          // add seeded white noise to every channel
+          const noisy = tone.map((ch) => {
+            const out = new Float32Array(BLOCK_SIZE);
+            for (let i = 0; i < BLOCK_SIZE; i++) {
+              this.seed = (this.seed * 1103515245 + 12345) & 0x7fffffff;
+              out[i] = ch[i]! + ((this.seed / 0x7fffffff) * 2 - 1) * 0.3;
+            }
+            return out;
+          });
+          opts.onBlock(noisy, SR);
+        }
+        return Promise.resolve();
+      }
+      stop(): Promise<void> { return Promise.resolve(); }
+    }
+
+    // Run with cleaning on
+    const onAdapter = new NoisyAdapter(42);
+    const onEngine = new LiveEngine(onAdapter, {
+      geom, deviceName: 'NOISY', sampleRate: SR, azimuthDeg: 90,
+      cleaning: { engine: 'omlsa' },
+    });
+    let onRms = 0;
+    onEngine.onOutput((o) => {
+      let s = 0; for (const v of o.mono) s += v * v;
+      onRms = Math.sqrt(s / o.mono.length);
+    });
+    await onEngine.start();
+
+    // Run without cleaning
+    const offAdapter = new NoisyAdapter(42);
+    const offEngine = new LiveEngine(offAdapter, {
+      geom, deviceName: 'NOISY', sampleRate: SR, azimuthDeg: 90,
+    });
+    let offRms = 0;
+    offEngine.onOutput((o) => {
+      let s = 0; for (const v of o.mono) s += v * v;
+      offRms = Math.sqrt(s / o.mono.length);
+    });
+    await offEngine.start();
+
+    // NR must not amplify: cleaned RMS <= uncleaned RMS
+    expect(onRms).toBeLessThanOrEqual(offRms + 1e-6);
   });
 });

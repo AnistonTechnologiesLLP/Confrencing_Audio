@@ -7,10 +7,8 @@
  */
 import { ExponentialTracker } from './exponential-tracker.js';
 
-// Use a more lenient type that accepts both ArrayBuffer and SharedArrayBuffer variants
-// This is necessary due to TypeScript's strict Float32Array generic typing
 export interface Cleaner {
-  process(block: Float32Array<ArrayBufferLike>, noiseGate: boolean): Float32Array<ArrayBufferLike>;
+  process(block: Float32Array, noiseGate: boolean): Float32Array;
   reset(): void;
 }
 
@@ -43,7 +41,7 @@ export class LevelPreservingCleaner implements Cleaner {
     this.limRelease = Math.min(1, Math.max(0, opts.releaseAlpha ?? 0.05));
   }
 
-  process(block: Float32Array<ArrayBufferLike>, noiseGate: boolean): Float32Array<ArrayBufferLike> {
+  process(block: Float32Array, noiseGate: boolean): Float32Array {
     let cleaned: Float32Array;
     try {
       cleaned = this.inner.process(block, noiseGate);
@@ -65,7 +63,8 @@ export class LevelPreservingCleaner implements Cleaner {
       let peak = 0;
       for (const v of out) { const a = Math.abs(v); if (a > peak) peak = a; }
       const need = peak > this.ceiling ? this.ceiling / peak : 1;
-      this.lim = need < this.lim ? need : this.lim + this.limRelease * (1 - this.lim);
+      const relTarget = Math.min(1, need);
+      this.lim = need < this.lim ? need : this.lim + this.limRelease * (relTarget - this.lim);
       if (this.lim < 1) for (let i = 0; i < out.length; i++) out[i]! *= this.lim;
       return out;
     } catch {
