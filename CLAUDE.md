@@ -138,6 +138,11 @@ Key structural facts that span files:
   bulk-delay estimation — the ~93 ms tap span absorbs the latency). Opt-in `LiveConfig.aec` (default off =
   Phase-3b unchanged); `BeamOutput.aec` surfaces ERLE. Not a `Cleaner` (needs a reference arg). AGC/PEQ = 3d.
 
+- **Loudness AGC (Phase 3d-1, `src/live/agc.ts`).** A `TargetLoudnessAgc` normalizes the cleaned mono toward a
+  target RMS with a slewed gain (reuses `ExponentialTracker`), silence-held and peak-limited; runs after the
+  cleaner, before the meter. Opt-in `LiveConfig.agc` (default off = Phase-3c unchanged); `BeamOutput.agc`
+  surfaces `gainLinear`. PEQ / band-limit / voice-gate are the remaining 3d-2/3d-3 sub-phases.
+
 ## Conventions
 
 - **Relative imports carry a `.js` extension** even though sources are `.ts` (ESM resolution). Match this —

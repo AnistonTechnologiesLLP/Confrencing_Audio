@@ -641,6 +641,27 @@ browser-safe core can't capture loopback); no bulk-delay auto-estimation or cloc
 must fit in the ~93 ms tap span); post-beam single-beam (re-steering forces re-convergence); no double-talk
 detector. Adds ~12 ms latency when active. AGC/PEQ are the remaining sub-phase (3d).
 
+### Loudness AGC (Phase 3d-1)
+
+Opt-in target-loudness normalization on the cleaned mono so the far side hears a consistent level:
+
+```ts
+const engine = new LiveEngine(new NodeCaptureAdapter(), {
+  geom, deviceName: 'SB-POLARIS', sampleRate: 44100,
+  cleaning: { engine: 'omlsa' },
+  agc: { targetDb: -20 },   // normalize toward -20 dBFS RMS
+});
+```
+
+- `agc: { targetDb, maxGainDb?, slewAlpha?, silenceDb? }` — a slewed scalar gain toward `targetDb` RMS,
+  clamped to ±`maxGainDb` (default 18 dB), held on silence (default −55 dB) so it never pumps the noise floor,
+  and peak-limited (−1 dB ceiling) so a large boost never clips. `BeamOutput.agc.gainLinear` is the applied gain.
+- It runs after the cleaning chain (matching the Python order). Omitting `agc` is byte-identical to Phase 3c.
+
+Still zero-dependency (reuses the existing one-pole tracker). **Honest limits:** a control-pure one-pole loudness
+gain, not an EBU-R128 / multiband processor; no transient-duck `freeze` yet (no transient stage in TS). PEQ,
+band-limit, and voice-gate are the remaining 3d sub-phases.
+
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md) for the version history.
