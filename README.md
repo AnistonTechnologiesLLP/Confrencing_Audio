@@ -614,6 +614,33 @@ deconvolution); assumes a fixed T60; shares the ~12 ms STFT latency and ~0.7 s w
 (older than `earlyMs`) is suppressed — early reflections are kept; the gain floor (−10 dB) means it never
 hard-mutes. AEC and AGC/PEQ are later sub-phases.
 
+### Echo cancellation (Phase 3c)
+
+Opt-in AEC removes the loudspeaker echo (the far-end voice the mics pick up from the speakers). It runs
+**first** in the cleaning chain and needs the host to feed the far-end reference:
+
+```ts
+const engine = new LiveEngine(new NodeCaptureAdapter(), {
+  geom, deviceName: 'SB-POLARIS', sampleRate: 44100,
+  aec: { nTaps: 16 },            // frequency-domain partitioned-block NLMS
+  cleaning: { engine: 'omlsa' }, // AEC runs before the cleaner
+});
+// from your playback callback, feed exactly what you send to the speakers:
+engine.pushReference(farEndBlock);
+```
+
+- `aec: { nTaps?, mu?, leak?, refFloor?, refSeconds? }` — a complex adaptive filter that estimates the echo
+  from a `nTaps`-tap (≈93 ms) history of the reference and subtracts it; it adapts only on far-end-active
+  frames (leaky NLMS, weight-clamped). `BeamOutput.aec.erleDb` is the echo-return-loss-enhancement readout.
+- The host supplies the reference via `LiveEngine.pushReference(block)` (the program audio it's playing);
+  the AEC pulls the time-aligned window per mic block from an internal ring.
+- Omitting `aec` is byte-identical to Phase 3b.
+
+Still zero-dependency (it reuses the built-in FFT). **Honest limits:** the host must provide the reference (the
+browser-safe core can't capture loopback); no bulk-delay auto-estimation or clock-drift compensation (the echo
+must fit in the ~93 ms tap span); post-beam single-beam (re-steering forces re-convergence); no double-talk
+detector. Adds ~12 ms latency when active. AGC/PEQ are the remaining sub-phase (3d).
+
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md) for the version history.

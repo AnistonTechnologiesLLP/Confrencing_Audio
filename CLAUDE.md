@@ -131,6 +131,13 @@ Key structural facts that span files:
   via an ordered `ChainedCleaner` (matching the Python chain order). Opt-in via `LiveConfig.cleaning.dereverb`
   (default off = Phase-3a unchanged); still zero-dep. AEC/AGC/PEQ are later sub-phases.
 
+- **Echo cancellation (Phase 3c, `src/live/aec.ts` + `reference-ring.ts`).** A `StreamingAec` frequency-domain
+  partitioned-block NLMS filter over the existing STFT (reuses `rfft`/`irfftInto` — zero-dep) cancels the
+  loudspeaker echo, running **first** (`beam → AEC → dereverb → denoise`). The far-end reference is host-pushed
+  via `LiveEngine.pushReference(block)` into a `ReferenceRing`; the AEC pulls `recent(n)` per block (no
+  bulk-delay estimation — the ~93 ms tap span absorbs the latency). Opt-in `LiveConfig.aec` (default off =
+  Phase-3b unchanged); `BeamOutput.aec` surfaces ERLE. Not a `Cleaner` (needs a reference arg). AGC/PEQ = 3d.
+
 ## Conventions
 
 - **Relative imports carry a `.js` extension** even though sources are `.ts` (ESM resolution). Match this —
