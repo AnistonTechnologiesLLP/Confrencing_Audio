@@ -433,3 +433,25 @@ describe('LiveEngine AEC (Phase 3c)', () => {
     expect(lastReading.erleDb).toBeGreaterThan(0);
   });
 });
+
+describe('LiveEngine AGC (Phase 3d-1)', () => {
+  const geom = sensibel8(0.04);
+  function mock() { return new MockCaptureAdapter({ channels: 8, azimuthDeg: 90, blocks: 60, blockSize: 256, freqHz: 1500 }); }
+
+  it('agc absent ⇒ no agc field (byte-identical to Phase 3c)', async () => {
+    const engine = new LiveEngine(mock(), { geom, deviceName: 'MOCK-8', sampleRate: 44100, azimuthDeg: 90 });
+    let agcField: unknown = 'unset';
+    engine.onOutput((o) => { agcField = (o as { agc?: unknown }).agc; });
+    await engine.start();
+    expect(agcField).toBeUndefined();
+  });
+
+  it('agc config ⇒ BeamOutput.agc surfaces gainLinear and runs', async () => {
+    const engine = new LiveEngine(mock(), { geom, deviceName: 'MOCK-8', sampleRate: 44100, azimuthDeg: 90, agc: { targetDb: -20 } });
+    let agc: unknown = 'unset';
+    engine.onOutput((o) => { agc = (o as { agc?: unknown }).agc; });
+    await engine.start();
+    expect(agc).toBeDefined();
+    expect(typeof (agc as { gainLinear: number }).gainLinear).toBe('number');
+  });
+});

@@ -2,7 +2,8 @@
  * Wires a CaptureAdapter to the live beamformer + meter, emitting a BeamOutput
  * per captured block. Pure orchestration (no node:* / no audio I/O of its own).
  */
-import type { CaptureAdapter, LiveConfig, BeamOutput, AutoSteerMode, CleaningConfig, AecConfig } from './types.js';
+import type { CaptureAdapter, LiveConfig, BeamOutput, AutoSteerMode, CleaningConfig, AecConfig, AgcConfig } from './types.js';
+import { TargetLoudnessAgc } from './agc.js';
 import { StreamingAec } from './aec.js';
 import { ReferenceRing } from './reference-ring.js';
 import { StreamingDelaySumBeam } from './beam.js';
@@ -39,6 +40,7 @@ export class LiveEngine {
   private refRing: ReferenceRing | null = null;
   private refScratch: Float32Array = new Float32Array(0);
   private aecActive = false;
+  private agc: TargetLoudnessAgc | null = null;
 
   constructor(adapter: CaptureAdapter, config: LiveConfig) {
     this.adapter = adapter;
@@ -111,6 +113,10 @@ export class LiveEngine {
       this.refRing = new ReferenceRing(sr, ac.refSeconds ?? 2);
       this.aecActive = true;
     }
+    const agcCfg: AgcConfig | undefined = config.agc;
+    if (agcCfg !== undefined) {
+      this.agc = new TargetLoudnessAgc(config.sampleRate ?? 44100, agcCfg);
+    }
   }
 
   get azimuthDeg(): number {
@@ -154,6 +160,8 @@ export class LiveEngine {
           const noiseGate = this.lastDoa ? !this.lastDoa.active : false; // VAD from the PREVIOUS DOA cycle (up to ~detectionHops blocks stale) — fine: the min-stat floor is VAD-independent and the makeup tracks slowly
           mono = this.cleaner.process(mono, noiseGate);
         }
+        // Phase 3d-1: target-loudness AGC on the cleaned mono (before the meter).
+        if (this.agc) mono = this.agc.process(mono, false);
         this.meter.update(mono);
         // Phase 2: feed covariance + run DOA/steer on the configured hop cadence.
         if (this.cov && this.autosteer) {
@@ -187,6 +195,7 @@ export class LiveEngine {
             : {}),
           ...(this.cleaningInfo !== null ? { cleaning: this.cleaningInfo } : {}),
           ...(this.aecActive && this.aec ? { aec: { erleDb: this.aec.erleDb, farendActive: this.aec.farendActive } } : {}),
+          ...(this.agc ? { agc: { gainLinear: this.agc.gainLinear } } : {}),
         });
       },
     });

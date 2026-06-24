@@ -46,3 +46,5 @@ export { ChainedCleaner } from './cleaner-chain.js';
 export { StreamingAec, AEC_FRAME, AEC_NTAPS, AEC_MU, AEC_LEAK, AEC_REF_FLOOR, AEC_ERLE_ALPHA, type AecOptions } from './aec.js';
 export { ReferenceRing } from './reference-ring.js';
 export type { AecConfig } from './types.js';
+export { TargetLoudnessAgc, AGC_MAX_GAIN_DB, AGC_SLEW_ALPHA, AGC_SILENCE_DB, AGC_CEILING_DB, AGC_LIMIT_RELEASE_ALPHA, type AgcOptions } from './agc.js';
+export type { AgcConfig } from './types.js';

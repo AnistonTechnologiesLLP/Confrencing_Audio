@@ -55,6 +55,7 @@ export interface BeamOutput {
   lockedTarget?: { azimuthDeg: number; seatId?: string } | null;
   cleaning?: { engine: string; preserved: boolean; dereverb?: boolean };
   aec?: { erleDb: number; farendActive: boolean };
+  agc?: { gainLinear: number };
 }
 
 export interface AecConfig {
@@ -64,6 +65,13 @@ export interface AecConfig {
   refFloor?: number;
   /** Reference-ring length in seconds (default 2). */
   refSeconds?: number;
+}
+
+export interface AgcConfig {
+  targetDb: number;
+  maxGainDb?: number;
+  slewAlpha?: number;
+  silenceDb?: number;
 }
 
 /** Opt-in post-beam noise suppression config. */
@@ -88,4 +96,5 @@ export interface LiveConfig {
   autoSteer?: AutoSteerConfig;
   cleaning?: CleaningConfig;
   aec?: AecConfig;
+  agc?: AgcConfig;
 }
