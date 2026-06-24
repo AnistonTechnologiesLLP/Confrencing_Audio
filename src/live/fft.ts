@@ -91,6 +91,18 @@ export class FftRadix2 {
    * freshly-allocated Float64Array of length n.
    */
   irfft(reHalf: Float64Array, imHalf: Float64Array): Float64Array {
+    const out = new Float64Array(this.n);
+    this.irfftInto(reHalf, imHalf, out);
+    return out;
+  }
+
+  /**
+   * Allocation-free inverse real FFT: same computation as {@link irfft} but writes
+   * the `n` time samples into the caller-provided `out` buffer (length must be ≥ n)
+   * instead of allocating. The spectrum rebuild uses the internal `this.re`/`this.im`
+   * work buffers — `out` is write-only, so passing a distinct buffer is safe.
+   */
+  irfftInto(reHalf: Float64Array, imHalf: Float64Array, out: Float64Array): void {
     const { n, re, im } = this;
     // Build Y = conj(full spectrum X). For a real signal X[n-k] = conj(X[k]).
     re[0] = reHalf[0]!; im[0] = -imHalf[0]!;
@@ -100,9 +112,7 @@ export class FftRadix2 {
       re[n - k] = reHalf[k]!; im[n - k] = imHalf[k]!;  // Y[n-k] = conj(X[n-k]) = conj(conj(X[k]))... = (reHalf[k], +imHalf[k])
     }
     this.fftInPlace();
-    const out = new Float64Array(n);
     for (let i = 0; i < n; i++) out[i] = re[i]! / n; // real part of conj(Z)/n = Z_re/n
-    return out;
   }
 }
 

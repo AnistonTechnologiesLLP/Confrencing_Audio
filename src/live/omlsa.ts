@@ -36,7 +36,7 @@ export class OmlsaProcessor extends StreamingSpectralProcessor {
   private readonly gammaThresh: number;
   private readonly nuMin: number;
   private readonly nuMax: number;
-  private prevClean: Float64Array | null = null;
+  private prevClean: Float64Array;
   private prevCleanFresh = true;
 
   constructor(sampleRate: number, opts: OmlsaOptions = {}) {
@@ -49,13 +49,13 @@ export class OmlsaProcessor extends StreamingSpectralProcessor {
     this.gammaThresh = opts.gammaThresh ?? 2.0;
     this.nuMin = opts.nuMin ?? 1e-3;
     this.nuMax = opts.nuMax ?? 500;
+    this.prevClean = new Float64Array(this.nb);
   }
 
   protected override computeGain(power: Float64Array, noiseMag: Float64Array): Float64Array {
     if (this.mode === 'gate') return super.computeGain(power, noiseMag);
     const nb = this.nb;
-    const g = new Float64Array(nb);
-    if (this.prevClean === null) this.prevClean = new Float64Array(nb);
+    const g = this._gBuf;
     const prev = this.prevClean;
     const first = this.prevCleanFresh;
     for (let k = 0; k < nb; k++) {
@@ -83,7 +83,7 @@ export class OmlsaProcessor extends StreamingSpectralProcessor {
 
   override reset(): void {
     super.reset();
-    this.prevClean = null;
+    this.prevClean.fill(0);
     this.prevCleanFresh = true;
   }
 }

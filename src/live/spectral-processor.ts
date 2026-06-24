@@ -54,6 +54,13 @@ export class StreamingSpectralProcessor {
   private readonly pSmooth: Float64Array;
   private readonly submin: Float64Array;
   private readonly minbuf: Float64Array[]; // subN × nb
+  // pre-allocated hot-path scratch (no per-hop allocation)
+  private readonly _power: Float64Array;
+  private readonly _gsBuf: Float64Array;
+  private readonly _yr: Float64Array;
+  private readonly _yi: Float64Array;
+  private readonly _irfftOut: Float64Array;
+  protected readonly _gBuf: Float64Array;
   private subFrame = 0;
   private subIdx = 0;
   private totalFrames = 0;
@@ -86,6 +93,13 @@ export class StreamingSpectralProcessor {
     this.pSmooth = new Float64Array(this.nb);
     this.submin = new Float64Array(this.nb).fill(Infinity);
     this.minbuf = Array.from({ length: this.subN }, () => new Float64Array(this.nb).fill(Infinity));
+    // pre-allocated hot-path scratch buffers
+    this._power = new Float64Array(this.nb);
+    this._gsBuf = new Float64Array(this.nb);
+    this._yr = new Float64Array(this.nb);
+    this._yi = new Float64Array(this.nb);
+    this._irfftOut = new Float64Array(this.F);
+    this._gBuf = new Float64Array(this.nb);
   }
 
   get engaged(): boolean {
@@ -94,13 +108,12 @@ export class StreamingSpectralProcessor {
 
   /** Wiener gate gain law (base). Subclasses override. */
   protected computeGain(power: Float64Array, noiseMag: Float64Array): Float64Array {
-    const g = new Float64Array(this.nb);
     for (let k = 0; k < this.nb; k++) {
       const n2 = noiseMag[k]! * noiseMag[k]!;
       const wiener = power[k]! / (power[k]! + this.oversub * n2 + 1e-20);
-      g[k] = this.gFloor + (1 - this.gFloor) * wiener;
+      this._gBuf[k] = this.gFloor + (1 - this.gFloor) * wiener;
     }
-    return g;
+    return this._gBuf;
   }
 
   process(block: Float32Array, noiseGate: boolean): Float32Array {
@@ -148,7 +161,7 @@ export class StreamingSpectralProcessor {
     for (let i = 0; i < F; i++) this.frame[i] = this.inbuf[i]! * this.win[i]!;
     const X = this.fft.rfft(this.frame);
     // per-bin power + min-statistics floor
-    const power = new Float64Array(nb);
+    const power = this._power;
     for (let k = 0; k < nb; k++) {
       const p = X.re[k]! * X.re[k]! + X.im[k]! * X.im[k]!;
       power[k] = p;
@@ -172,8 +185,8 @@ export class StreamingSpectralProcessor {
     if (!this._engaged && this.totalFrames >= this.warmup) this._engaged = true;
     if (!this._engaged) return;
     // gain law + smoothing
-    let g = this.computeGain(power, this.noiseMag);
-    const gs = new Float64Array(nb);
+    const g = this.computeGain(power, this.noiseMag);
+    const gs = this._gsBuf;
     gs[0] = g[0]!;
     gs[nb - 1] = g[nb - 1]!;
     for (let k = 1; k < nb - 1; k++) gs[k] = 0.25 * g[k - 1]! + 0.5 * g[k]! + 0.25 * g[k + 1]!;
@@ -183,11 +196,11 @@ export class StreamingSpectralProcessor {
       gs[k] = this.amount < 1 ? this.amount * v + (1 - this.amount) : v;
     }
     // apply, irfft, overlap-add
-    const yr = new Float64Array(nb);
-    const yi = new Float64Array(nb);
+    const yr = this._yr;
+    const yi = this._yi;
     for (let k = 0; k < nb; k++) { yr[k] = gs[k]! * X.re[k]!; yi[k] = gs[k]! * X.im[k]!; }
-    const y = this.fft.irfft(yr, yi);
-    for (let i = 0; i < F; i++) this.ola[i]! += y[i]!;
+    this.fft.irfftInto(yr, yi, this._irfftOut);
+    for (let i = 0; i < F; i++) this.ola[i]! += this._irfftOut[i]!;
     if (this.outFill + H > this.outq.length) {
       const next = new Float64Array(this.outq.length * 2);
       next.set(this.outq.subarray(0, this.outFill));
