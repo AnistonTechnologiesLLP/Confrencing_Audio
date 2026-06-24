@@ -130,6 +130,11 @@ export class ControlApiServer {
     this.server = undefined;
     return new Promise((resolve) => {
       server.close(() => resolve());
+      // `server.close()` only fires its callback once every connection has
+      // closed. Node's global `fetch` (undici) leaves an idle keep-alive socket
+      // pooled, which on Node 18 lingers until the 5 s `keepAliveTimeout` — so
+      // force-close all sockets to tear down promptly. (Node ≥18.2.)
+      server.closeAllConnections?.();
     });
   }
 
