@@ -39,3 +39,5 @@ export { StreamingSpectralProcessor, NR_FRAME, NR_HOP, type SpectralOptions } fr
 export { OmlsaProcessor, expE1, type OmlsaOptions } from './omlsa.js';
 export { ExponentialTracker } from './exponential-tracker.js';
 export { LevelPreservingCleaner, type Cleaner } from './level-preserving-cleaner.js';
+export { StreamingDereverb, DEREVERB_T60, DEREVERB_BETA, DEREVERB_GMIN_DB, DEREVERB_EARLY_MS, type DereverbOptions } from './dereverb.js';
+export { ChainedCleaner } from './cleaner-chain.js';

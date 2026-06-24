@@ -12,6 +12,8 @@ import { seatAzimuthForArray } from '../seat-mapper/seat-mapper.js';
 import { StreamingSpectralProcessor } from './spectral-processor.js';
 import { OmlsaProcessor } from './omlsa.js';
 import { LevelPreservingCleaner, type Cleaner } from './level-preserving-cleaner.js';
+import { StreamingDereverb } from './dereverb.js';
+import { ChainedCleaner } from './cleaner-chain.js';
 
 export class LiveEngine {
   private readonly adapter: CaptureAdapter;
@@ -30,7 +32,7 @@ export class LiveEngine {
   private _lockedTarget: { azimuthDeg: number; seatId?: string } | null = null;
   private lastDoa: DoaResult | null = null;
   private cleaner: Cleaner | null = null;
-  private cleaningInfo: { engine: string; preserved: boolean } | null = null;
+  private cleaningInfo: { engine: string; preserved: boolean; dereverb?: boolean } | null = null;
 
   constructor(adapter: CaptureAdapter, config: LiveConfig) {
     this.adapter = adapter;
@@ -68,17 +70,28 @@ export class LiveEngine {
       this.autosteer = new AutoSteerController(opts);
       this.doaOpts = as.doa ?? {};
     }
-    // --- Phase 3a: optional post-beam noise suppression ---
+    // --- Phase 3a/3b: optional post-beam cleaning chain (dereverb → denoise) ---
     const cc: CleaningConfig | undefined = config.cleaning;
-    if (cc !== undefined && cc.engine !== 'off') {
+    const engine = cc?.engine ?? 'off';
+    if (cc !== undefined && (engine !== 'off' || cc.dereverb !== undefined)) {
       const sr = config.sampleRate ?? 44100;
       const strength = cc.strength ?? 1;
-      const inner: Cleaner =
-        cc.engine === 'gate'
-          ? new StreamingSpectralProcessor(sr, { amount: strength })
-          : new OmlsaProcessor(sr, { amount: strength, mode: cc.engine });
+      const stages: Cleaner[] = [];
+      if (cc.dereverb !== undefined) stages.push(new StreamingDereverb(sr, cc.dereverb));
+      if (engine !== 'off') {
+        stages.push(
+          engine === 'gate'
+            ? new StreamingSpectralProcessor(sr, { amount: strength })
+            : new OmlsaProcessor(sr, { amount: strength, mode: engine }),
+        );
+      }
+      const inner: Cleaner = stages.length === 1 ? stages[0]! : new ChainedCleaner(stages);
       this.cleaner = cc.preserveLevel ? new LevelPreservingCleaner(inner) : inner;
-      this.cleaningInfo = { engine: cc.engine, preserved: cc.preserveLevel === true };
+      this.cleaningInfo = {
+        engine,
+        preserved: cc.preserveLevel === true,
+        ...(cc.dereverb !== undefined ? { dereverb: true } : {}),
+      };
     }
   }
 
