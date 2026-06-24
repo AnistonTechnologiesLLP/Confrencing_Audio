@@ -14,6 +14,7 @@ import {
 } from '../src/index.js';
 import { ControlApiServer, ConfigHolder } from '../src/node.js';
 import { createMicrophoneArray } from '../src/coverage/coverage.js';
+import { connect } from 'node:net';
 
 /**
  * Mirror of conf_pipeline-py/tests/test_control_api.py.
@@ -188,5 +189,28 @@ describe('control API — lifecycle and ephemeral port', () => {
 
     // truly down: a request to the (now-released) port must fail to connect
     await expect(fetch(`http://127.0.0.1:${downPort}/api/status`)).rejects.toBeDefined();
+  });
+
+  it('stop() does not block on a lingering keep-alive connection', async () => {
+    // Regression: Node's `fetch` (undici) leaves an idle keep-alive socket
+    // pooled, and on Node 18 `server.close()` will not auto-close it — its
+    // callback then waits out the 5 s `keepAliveTimeout`, hanging `stop()`.
+    // A held-open raw socket reproduces this on every Node version.
+    const holder = new ConfigHolder(buildConfig());
+    const srv = new ControlApiServer(() => holder.get(), (t) => holder.apply(t));
+    await srv.start();
+    const sock = connect(srv.port, '127.0.0.1');
+    await new Promise<void>((resolve, reject) => {
+      sock.once('connect', () => resolve());
+      sock.once('error', reject);
+    });
+    try {
+      const t0 = Date.now();
+      await srv.stop();
+      // Must tear down promptly, not wait out keepAliveTimeout (~5 s).
+      expect(Date.now() - t0).toBeLessThan(1000);
+    } finally {
+      sock.destroy();
+    }
   });
 });
