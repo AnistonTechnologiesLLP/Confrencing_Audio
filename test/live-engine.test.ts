@@ -330,3 +330,106 @@ describe('LiveEngine dereverb (Phase 3b)', () => {
     expect(onRms).toBeLessThanOrEqual(offRms + 1e-6);
   });
 });
+
+describe('LiveEngine AEC (Phase 3c)', () => {
+  const geom = sensibel8(0.04);
+  function mock() { return new MockCaptureAdapter({ channels: 8, azimuthDeg: 90, blocks: 40, blockSize: 256, freqHz: 1500 }); }
+
+  it('aec absent ⇒ no aec field (byte-identical to Phase 3b)', async () => {
+    const engine = new LiveEngine(mock(), { geom, deviceName: 'MOCK-8', sampleRate: 44100, azimuthDeg: 90 });
+    let aecField: unknown = 'unset';
+    engine.onOutput((o) => { aecField = (o as { aec?: unknown }).aec; });
+    await engine.start();
+    expect(aecField).toBeUndefined();
+  });
+
+  it('aec config ⇒ BeamOutput.aec is surfaced and runs', async () => {
+    const engine = new LiveEngine(mock(), { geom, deviceName: 'MOCK-8', sampleRate: 44100, azimuthDeg: 90, aec: {} });
+    let aec: unknown = 'unset';
+    engine.onOutput((o) => { aec = (o as { aec?: unknown }).aec; });
+    await engine.start();
+    expect(aec).toBeDefined();
+    const a = aec as { erleDb: number; farendActive: boolean };
+    expect(typeof a.erleDb).toBe('number');
+    expect(typeof a.farendActive).toBe('boolean');
+  });
+
+  it('pushReference is a no-op when AEC is not configured (does not throw)', () => {
+    const engine = new LiveEngine(mock(), { geom, deviceName: 'MOCK-8', sampleRate: 44100, azimuthDeg: 90 });
+    expect(() => engine.pushReference(new Float32Array(256))).not.toThrow();
+  });
+
+  it('pushReference → ReferenceRing → AEC.process: farendActive becomes true and erleDb is finite > 0 after warm-up', async () => {
+    // Build a synthetic echo scenario: each block, a seeded reference signal is pushed
+    // to the engine's refRing, and the same signal (delayed one block) is what the
+    // beamformer's mono output would carry. We approximate this by using a tone that
+    // will be picked up by the steered beam, and separately push that same tone as the
+    // reference. After enough warm-up, the AEC should detect far-end activity.
+    //
+    // Approach: custom adapter that, before each onBlock, pushes a known mono reference
+    // via engine.pushReference(). The adapter channels carry a copy of that same reference
+    // on all 8 mics (so the beamformed mono ≈ reference). Far-end gate sees rpow > refFloor.
+
+    const SR = 44100;
+    const BLOCK = 512;
+    const BLOCKS = 60;
+
+    // We'll wire the engine reference after construction using a holder object.
+    let engineRef: LiveEngine | null = null;
+
+    // LCG for a deterministic reference signal
+    function lcg(seed: number): () => number {
+      let s = seed;
+      return () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return (s / 0x7fffffff) * 2 - 1; };
+    }
+
+    class EchoAdapter implements CaptureAdapter {
+      enumerate(): Promise<CaptureDevice[]> {
+        return Promise.resolve([{ id: 'echo', name: 'ECHO-8', maxInputChannels: 8, defaultSampleRate: SR }]);
+      }
+      start(opts: CaptureStartOptions): Promise<void> {
+        const rnd = lcg(42);
+        for (let b = 0; b < BLOCKS; b++) {
+          // Build the reference block (what the loudspeaker plays)
+          const refBlock = new Float32Array(BLOCK);
+          for (let i = 0; i < BLOCK; i++) refBlock[i] = 0.5 * rnd();
+          // Push it to the AEC's reference ring BEFORE delivering the mic block
+          engineRef?.pushReference(refBlock);
+          // Mic channels carry the same signal on all 8 channels (echo of the reference)
+          const channels: Float32Array[] = Array.from({ length: 8 }, () => refBlock.slice());
+          opts.onBlock(channels, SR);
+        }
+        return Promise.resolve();
+      }
+      stop(): Promise<void> { return Promise.resolve(); }
+    }
+
+    const adapter = new EchoAdapter();
+    const engine = new LiveEngine(adapter, {
+      geom,
+      deviceName: 'ECHO-8',
+      sampleRate: SR,
+      azimuthDeg: 90,
+      aec: { nTaps: 4, mu: 0.3 },
+    });
+    engineRef = engine; // wire the closure
+
+    const aecReadings: Array<{ erleDb: number; farendActive: boolean }> = [];
+    engine.onOutput((o) => {
+      if (o.aec !== undefined) aecReadings.push(o.aec);
+    });
+
+    await engine.start();
+
+    // At least some outputs must have been emitted
+    expect(aecReadings.length).toBeGreaterThan(0);
+
+    // After warm-up, far-end must be detected (the reference has power >> refFloor)
+    const lastReading = aecReadings[aecReadings.length - 1]!;
+    expect(lastReading.farendActive).toBe(true);
+
+    // erleDb must be a finite number > 0 (adaptation has run)
+    expect(Number.isFinite(lastReading.erleDb)).toBe(true);
+    expect(lastReading.erleDb).toBeGreaterThan(0);
+  });
+});

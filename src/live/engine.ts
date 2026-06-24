@@ -2,7 +2,9 @@
  * Wires a CaptureAdapter to the live beamformer + meter, emitting a BeamOutput
  * per captured block. Pure orchestration (no node:* / no audio I/O of its own).
  */
-import type { CaptureAdapter, LiveConfig, BeamOutput, AutoSteerMode, CleaningConfig } from './types.js';
+import type { CaptureAdapter, LiveConfig, BeamOutput, AutoSteerMode, CleaningConfig, AecConfig } from './types.js';
+import { StreamingAec } from './aec.js';
+import { ReferenceRing } from './reference-ring.js';
 import { StreamingDelaySumBeam } from './beam.js';
 import { LevelMeter } from './meter.js';
 import { StreamingCovarianceAccumulator } from './covariance.js';
@@ -33,6 +35,10 @@ export class LiveEngine {
   private lastDoa: DoaResult | null = null;
   private cleaner: Cleaner | null = null;
   private cleaningInfo: { engine: string; preserved: boolean; dereverb?: boolean } | null = null;
+  private aec: StreamingAec | null = null;
+  private refRing: ReferenceRing | null = null;
+  private refScratch: Float32Array = new Float32Array(0);
+  private aecActive = false;
 
   constructor(adapter: CaptureAdapter, config: LiveConfig) {
     this.adapter = adapter;
@@ -93,6 +99,18 @@ export class LiveEngine {
         ...(cc.dereverb !== undefined ? { dereverb: true } : {}),
       };
     }
+    const ac: AecConfig | undefined = config.aec;
+    if (ac !== undefined) {
+      const sr = config.sampleRate ?? 44100;
+      this.aec = new StreamingAec(sr, {
+        ...(ac.nTaps !== undefined ? { nTaps: ac.nTaps } : {}),
+        ...(ac.mu !== undefined ? { mu: ac.mu } : {}),
+        ...(ac.leak !== undefined ? { leak: ac.leak } : {}),
+        ...(ac.refFloor !== undefined ? { refFloor: ac.refFloor } : {}),
+      });
+      this.refRing = new ReferenceRing(sr, ac.refSeconds ?? 2);
+      this.aecActive = true;
+    }
   }
 
   get azimuthDeg(): number {
@@ -104,6 +122,11 @@ export class LiveEngine {
 
   onOutput(cb: (out: BeamOutput) => void): void {
     this.cb = cb;
+  }
+
+  /** Feed one block of the far-end reference (what the loudspeakers are playing). No-op when AEC is off. */
+  pushReference(block: Float32Array): void {
+    this.refRing?.push(block);
   }
 
   /** Re-aim the beam (drops beam history to avoid stale samples). */
@@ -120,6 +143,12 @@ export class LiveEngine {
       sampleRate: this.config.sampleRate ?? 44100,
       onBlock: (channels) => {
         let mono: Float32Array = this.beam.process(channels);
+        // Phase 3c: cancel far-end echo first (before dereverb/denoise + the meter).
+        if (this.aec && this.refRing) {
+          if (this.refScratch.length !== mono.length) this.refScratch = new Float32Array(mono.length);
+          const ref = this.refRing.recent(this.refScratch);
+          mono = this.aec.process(mono, ref, false);
+        }
         // Phase 3a: optional post-beam noise suppression (the meter sees the cleaned signal).
         if (this.cleaner) {
           const noiseGate = this.lastDoa ? !this.lastDoa.active : false; // VAD from the PREVIOUS DOA cycle (up to ~detectionHops blocks stale) — fine: the min-stat floor is VAD-independent and the makeup tracks slowly
@@ -157,6 +186,7 @@ export class LiveEngine {
               }
             : {}),
           ...(this.cleaningInfo !== null ? { cleaning: this.cleaningInfo } : {}),
+          ...(this.aecActive && this.aec ? { aec: { erleDb: this.aec.erleDb, farendActive: this.aec.farendActive } } : {}),
         });
       },
     });

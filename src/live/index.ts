@@ -43,3 +43,6 @@ export { ExponentialTracker } from './exponential-tracker.js';
 export { LevelPreservingCleaner, type Cleaner } from './level-preserving-cleaner.js';
 export { StreamingDereverb, DEREVERB_T60, DEREVERB_BETA, DEREVERB_GMIN_DB, DEREVERB_EARLY_MS, type DereverbOptions } from './dereverb.js';
 export { ChainedCleaner } from './cleaner-chain.js';
+export { StreamingAec, AEC_FRAME, AEC_NTAPS, AEC_MU, AEC_LEAK, AEC_REF_FLOOR, AEC_ERLE_ALPHA, type AecOptions } from './aec.js';
+export { ReferenceRing } from './reference-ring.js';
+export type { AecConfig } from './types.js';

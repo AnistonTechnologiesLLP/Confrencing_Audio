@@ -54,6 +54,13 @@ The JSON **config schema** is versioned independently via `CONFIG_VERSION`
   `LiveConfig.cleaning.dereverb` (`engine` is now optional so dereverb can run alone); `BeamOutput.cleaning`
   surfaces an omit-when-absent `dereverb` flag (Phase-3a shapes unchanged). Pure DSP — no new dependency.
   Ported from the Python `StreamingDereverb`. AEC / AGC / PEQ are later sub-phases.
+- **Real-time AEC (Phase 3c)** — opt-in `StreamingAec` (`aec.ts`), a frequency-domain partitioned-block NLMS
+  echo canceller over the existing Hann 512/256 STFT (reuses `FftRadix2` — no new dependency), run **first** in
+  the chain (before dereverb/denoise). The far-end reference enters via a new `LiveEngine.pushReference(block)`
+  feeding a pure-TS `ReferenceRing` (`reference-ring.ts`); the AEC pulls the aligned window per mic block. Wired
+  through `LiveConfig.aec` (default off = Phase-3b behavior); `BeamOutput.aec` surfaces ERLE + far-end activity
+  (omit-when-absent). AEC is a separate engine stage (not a `Cleaner` — it needs a reference). Ported from the
+  Python `StreamingAec` / `reference_capture.py`. AGC/PEQ are the remaining 3d sub-phase.
 - **Microphone-array mounting bearing** (schema **v4 → v5**) — `MicrophoneArray` gains
   an optional `bearingDeg` (compass heading of the array's 0° reference, 0° = +Y), so a
   detected array-relative azimuth can be mapped into room coordinates — the prerequisite
