@@ -554,6 +554,29 @@ Still pure and zero-dependency: the FFT is a built-in radix-2 transform. **Hones
 ≈ beamwidth (~40° min talker separation); band-limited below the ~5.6 kHz spatial-aliasing cutoff;
 single-talker follow (simultaneous multi-talker capture is a later, frequency-domain phase).
 
+### Noise suppression (Phase 3a)
+
+Opt-in post-beam cleaning kills steady fans/AC. Enable it with `LiveConfig.cleaning`:
+
+```ts
+const engine = new LiveEngine(new NodeCaptureAdapter(), {
+  geom, deviceName: 'SB-POLARIS', sampleRate: 44100,
+  cleaning: { engine: 'omlsa', strength: 1, preserveLevel: true }, // OM-LSA + makeup so the voice stays full
+});
+```
+
+- `engine: 'omlsa' | 'wiener' | 'gate'` — an STFT denoiser with a VAD-independent **minimum-statistics**
+  noise floor (learns steady fans/AC continuously). `omlsa` is the deepest cut; `gate` is the gentlest.
+- `strength` (0..1) blends the cut toward unity for Gentle/Medium/Full.
+- `preserveLevel` adds a **speech-gated makeup gain** that restores the ~5–7 dB every denoiser cuts from
+  the talker — SNR-neutrally and boost-only, with a peak limiter so it never clips.
+- `engine: 'off'` (default) — no cleaning; byte-identical to the Phase-2 path.
+
+Still zero-dependency (pure-DSP, the exponential integral is vendored). **Honest limits:** adds ~12 ms STFT
+latency when active (none when off); the floor needs ~0.7 s to warm up (bit-exact passthrough until then);
+the makeup is boost-only and capped at 8 dB. Dereverb, AEC, and AGC/PEQ are later sub-phases;
+DeepFilterNet3 (which needs ONNX) is an optional far-future add — the pure-DSP OM-LSA is the proven cut.
+
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md) for the version history.

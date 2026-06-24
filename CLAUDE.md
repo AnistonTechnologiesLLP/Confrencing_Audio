@@ -117,6 +117,14 @@ Key structural facts that span files:
   90°; a planar ring can't resolve above/below the plane); multi-talker/nulling is a later
   frequency-domain phase.
 
+- **Post-beam noise suppression (Phase 3a, `src/live/{spectral-processor,omlsa,level-preserving-cleaner}.ts`
+  + `irfft` in `fft.ts`).** A streaming Hann overlap-add STFT (512/256) with a VAD-independent
+  minimum-statistics noise floor and gate/OM-LSA/Wiener gain laws (the exponential integral is vendored —
+  still zero-dep), plus a speech-gated level-preserving makeup so the talker stays full. Opt-in via
+  `LiveConfig.cleaning` (default `off` = Phase-2 unchanged); the cleaning stage runs after the beam and
+  before the meter. ~12 ms latency when active. Dereverb/AEC/AGC are later sub-phases; DFN3 needs ONNX
+  (deferred, optional).
+
 ## Conventions
 
 - **Relative imports carry a `.js` extension** even though sources are `.ts` (ESM resolution). Match this —
