@@ -48,3 +48,5 @@ export { ReferenceRing } from './reference-ring.js';
 export type { AecConfig } from './types.js';
 export { TargetLoudnessAgc, AGC_MAX_GAIN_DB, AGC_SLEW_ALPHA, AGC_SILENCE_DB, AGC_CEILING_DB, AGC_LIMIT_RELEASE_ALPHA, type AgcOptions } from './agc.js';
 export type { AgcConfig } from './types.js';
+export { StreamingPeq, PEQ_DENORMAL_FLOOR } from './peq.js';
+export type { PeqConfig } from './types.js';

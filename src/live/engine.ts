@@ -4,6 +4,7 @@
  */
 import type { CaptureAdapter, LiveConfig, BeamOutput, AutoSteerMode, CleaningConfig, AecConfig, AgcConfig } from './types.js';
 import { TargetLoudnessAgc } from './agc.js';
+import { StreamingPeq } from './peq.js';
 import { StreamingAec } from './aec.js';
 import { ReferenceRing } from './reference-ring.js';
 import { StreamingDelaySumBeam } from './beam.js';
@@ -41,6 +42,7 @@ export class LiveEngine {
   private refScratch: Float32Array = new Float32Array(0);
   private aecActive = false;
   private agc: TargetLoudnessAgc | null = null;
+  private peq: StreamingPeq | null = null;
 
   constructor(adapter: CaptureAdapter, config: LiveConfig) {
     this.adapter = adapter;
@@ -113,6 +115,9 @@ export class LiveEngine {
       this.refRing = new ReferenceRing(sr, ac.refSeconds ?? 2);
       this.aecActive = true;
     }
+    if (config.peq && config.peq.bands.length > 0) {
+      this.peq = new StreamingPeq(config.sampleRate ?? 44100, config.peq.bands);
+    }
     const agcCfg: AgcConfig | undefined = config.agc;
     if (agcCfg !== undefined) {
       this.agc = new TargetLoudnessAgc(config.sampleRate ?? 44100, agcCfg);
@@ -160,6 +165,8 @@ export class LiveEngine {
           const noiseGate = this.lastDoa ? !this.lastDoa.active : false; // VAD from the PREVIOUS DOA cycle (up to ~detectionHops blocks stale) — fine: the min-stat floor is VAD-independent and the makeup tracks slowly
           mono = this.cleaner.process(mono, noiseGate);
         }
+        // Phase 3d-2: parametric EQ — tone-shape the clean signal before the AGC levels it.
+        if (this.peq) mono = this.peq.process(mono);
         // Phase 3d-1: target-loudness AGC on the cleaned mono (before the meter).
         if (this.agc) mono = this.agc.process(mono, false);
         this.meter.update(mono);

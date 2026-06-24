@@ -1,6 +1,7 @@
 import type { ArrayGeometry } from '../beamformer/geometry.js';
 import type { SystemConfig } from '../model/index.js';
 import type { DetectOptions } from './doa.js';
+import type { PeqBand } from '../model/dsp-blocks.js';
 
 /** A capture device discovered by an adapter (selected by NAME, never index). */
 export interface CaptureDevice {
@@ -74,6 +75,11 @@ export interface AgcConfig {
   silenceDb?: number;
 }
 
+/** Parametric-EQ config: up to {@link PEQ_MAX_BANDS} RBJ bands (the shared PEQ model). */
+export interface PeqConfig {
+  bands: PeqBand[];
+}
+
 /** Opt-in post-beam noise suppression config. */
 export interface CleaningConfig {
   engine?: 'off' | 'gate' | 'omlsa' | 'wiener';
@@ -97,4 +103,5 @@ export interface LiveConfig {
   cleaning?: CleaningConfig;
   aec?: AecConfig;
   agc?: AgcConfig;
+  peq?: PeqConfig;
 }
