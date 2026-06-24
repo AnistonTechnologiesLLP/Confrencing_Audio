@@ -182,12 +182,13 @@ export class LiveEngine {
           const noiseGate = this.lastDoa ? !this.lastDoa.active : false; // VAD from the PREVIOUS DOA cycle (up to ~detectionHops blocks stale) — fine: the min-stat floor is VAD-independent and the makeup tracks slowly
           mono = this.cleaner.process(mono, noiseGate);
         }
-        // Phase 3d-3: speech band-limit (reuses the PEQ) — trim out-of-band rumble/hiss before tone + level.
-        if (this.bandLimit) mono = this.bandLimit.process(mono);
         // Phase 3d-2: parametric EQ — tone-shape the clean signal before the AGC levels it.
         if (this.peq) mono = this.peq.process(mono);
         // Phase 3d-1: target-loudness AGC on the cleaned mono (before the meter).
         if (this.agc) mono = this.agc.process(mono, false);
+        // Phase 3d-3: speech band-limit (reuses the PEQ) — trim out-of-band energy AFTER the AGC levels
+        // (matches the Python chain PEQ → AGC → band-limit → voice-gate).
+        if (this.bandLimit) mono = this.bandLimit.process(mono);
         // Phase 3d-3: voice-only output gate — duck non-speech (runs LAST, after the AGC).
         if (this.voiceGate) mono = this.voiceGate.process(mono);
         this.meter.update(mono);

@@ -37,6 +37,6 @@ describe('LiveEngine PEQ wiring', () => {
     const eqRms = eqOuts.at(-1)!.rmsDb;
     expect(Number.isFinite(eqRms)).toBe(true);
     // a +12 dB bell centred on the 1 kHz beam tone lifts the level
-    expect(eqRms).toBeGreaterThan(refRms + 1);
+    expect(eqRms).toBeGreaterThan(refRms + 6);
   });
 });

@@ -61,7 +61,7 @@ describe('TargetLoudnessAgc', () => {
     const agc = new TargetLoudnessAgc(44100, { targetDb: 0 }); // big boost demand
     let out;
     for (let b = 0; b < 200; b++) out = agc.process(tone(256, 0.4), false);
-    expect(Math.max(...out!.subarray(0).map(Math.abs))).toBeLessThanOrEqual(Math.pow(10, -1 / 20) + 0.02);
+    expect(Math.max(...out!.subarray(0).map(Math.abs))).toBeLessThanOrEqual(Math.pow(10, -1 / 20) + 5e-3);
   });
 
   it('reset() clears the slew + limiter', () => {

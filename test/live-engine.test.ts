@@ -454,4 +454,21 @@ describe('LiveEngine AGC (Phase 3d-1)', () => {
     expect(agc).toBeDefined();
     expect(typeof (agc as { gainLinear: number }).gainLinear).toBe('number');
   });
+
+  it('agc measurably shifts the emitted level toward the target vs no-AGC', async () => {
+    // Baseline: no AGC
+    const refEngine = new LiveEngine(mock(), { geom, deviceName: 'MOCK-8', sampleRate: 44100, azimuthDeg: 90 });
+    let refLast = 0;
+    refEngine.onOutput((o) => { refLast = o.rmsDb; });
+    await refEngine.start();
+
+    // AGC with a target well away from the natural beam level
+    const agcEngine = new LiveEngine(mock(), { geom, deviceName: 'MOCK-8', sampleRate: 44100, azimuthDeg: 90, agc: { targetDb: -20 } });
+    let agcLast = 0;
+    agcEngine.onOutput((o) => { agcLast = o.rmsDb; });
+    await agcEngine.start();
+
+    expect(Number.isFinite(agcLast)).toBe(true);
+    expect(agcLast).not.toBeCloseTo(refLast, 1); // AGC shifted the level (it is not a no-op)
+  });
 });

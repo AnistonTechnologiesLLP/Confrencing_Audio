@@ -143,6 +143,26 @@ describe('StreamingPeq', () => {
     for (let i = 0; i < first.length; i++) expect(again[i]).toBeCloseTo(first[i]!, 6);
   });
 
+  it('a +12 dB lowShelf at 500 Hz boosts a low tone and leaves a high tone ~unchanged', () => {
+    const band: PeqBand = { type: 'lowShelf', freqHz: 500, gainDb: 12, q: 0.707 };
+    const low = runSteady(new StreamingPeq(FS, [band]), 100);
+    const high = runSteady(new StreamingPeq(FS, [band]), 6000);
+    const refLow = runSteady(new StreamingPeq(FS), 100);
+    const refHigh = runSteady(new StreamingPeq(FS), 6000);
+    expect(20 * Math.log10(rms(low) / rms(refLow))).toBeGreaterThan(9); // ~ +12 dB below the shelf
+    expect(Math.abs(20 * Math.log10(rms(high) / rms(refHigh)))).toBeLessThan(2); // far above ~ unchanged
+  });
+
+  it('a +12 dB highShelf at 3 kHz boosts a high tone and leaves a low tone ~unchanged', () => {
+    const band: PeqBand = { type: 'highShelf', freqHz: 3000, gainDb: 12, q: 0.707 };
+    const high = runSteady(new StreamingPeq(FS, [band]), 8000);
+    const low = runSteady(new StreamingPeq(FS, [band]), 200);
+    const refHigh = runSteady(new StreamingPeq(FS), 8000);
+    const refLow = runSteady(new StreamingPeq(FS), 200);
+    expect(20 * Math.log10(rms(high) / rms(refHigh))).toBeGreaterThan(9); // ~ +12 dB above the shelf
+    expect(Math.abs(20 * Math.log10(rms(low) / rms(refLow))).valueOf()).toBeLessThan(2); // far below ~ unchanged
+  });
+
   it('stays finite over a long run (no NaN / denormal stall)', () => {
     const peq = new StreamingPeq(FS, [{ type: 'bell', freqHz: 50, gainDb: 10, q: 8 }]);
     for (let b = 0; b < 200; b++) {

@@ -30,6 +30,25 @@ describe('LiveEngine voice-gate + band-limit wiring', () => {
     expect(typeof last.voiceGate!.open).toBe('boolean');
     expect(typeof last.voiceGate!.reductionDb).toBe('number');
     expect(typeof last.voiceGate!.score).toBe('number');
+    expect(last.voiceGate!.score).toBeGreaterThanOrEqual(0);
+    expect(last.voiceGate!.score).toBeLessThanOrEqual(1);
+    expect(last.voiceGate!.reductionDb).toBeGreaterThanOrEqual(0);
+    // open ⇔ ~no reduction; closed ⇔ real reduction
+    if (last.voiceGate!.open) expect(last.voiceGate!.reductionDb).toBeLessThan(6);
+    else expect(last.voiceGate!.reductionDb).toBeGreaterThan(0);
+  });
+
+  it('composes agc + peq + voiceGate without throwing and emits both telemetry fields', async () => {
+    const outs = await run({
+      agc: { targetDb: -20 },
+      peq: { bands: [{ type: 'bell', freqHz: 1000, gainDb: 6, q: 1 }] },
+      voiceGate: {},
+    });
+    expect(outs.length).toBeGreaterThan(0);
+    const last = outs.at(-1)!;
+    expect(last.agc).toBeDefined();
+    expect(last.voiceGate).toBeDefined();
+    expect(Number.isFinite(last.rmsDb)).toBe(true);
   });
 
   it('bandLimit config runs, attenuates out-of-band energy, and adds no BeamOutput field', async () => {

@@ -29,7 +29,9 @@ describe('StreamingVoiceGate', () => {
     // steady (non-speech) → score stays low → gain ducks toward 10^(-15/20) ≈ 0.178
     expect(gate.gateOpen).toBe(false);
     expect(gate.reductionDb).toBeGreaterThan(6);
-    expect(rms(out)).toBeLessThan(0.2 * 0.4); // clearly attenuated vs the 0.2-amp input
+    const floorLevel = 0.2 * Math.pow(10, -15 / 20);
+    expect(rms(out)).toBeLessThan(floorLevel * 1.6); // converged near the −15 dB floor
+    expect(rms(out)).toBeGreaterThan(floorLevel * 0.5); // a duck, not a mute
   });
 
   it('opens immediately on a sudden loud onset (onset branch)', () => {
@@ -37,8 +39,10 @@ describe('StreamingVoiceGate', () => {
     // settle quiet first
     for (let b = 0; b < 10; b++) gate.process(noiseBlock(N, 0.001, b + 1));
     const out = gate.process(noiseBlock(N, 0.5, 999)); // 500x louder → onset
-    // the onset block is NOT floored: its output is close to full gain, not ducked
-    expect(rms(out)).toBeGreaterThan(0.5 * 0.5);
+    // the onset block is NOT floored: its output is close to full gain, not ducked.
+    // noiseBlock(amp=0.5) RMS ≈ amp/√3 ≈ 0.289; at full gain that is the output; at floor (-15 dB) it is ≈ 0.051.
+    // Assert we are clearly in the full-gain region (> 80 % of the max achievable ≈ 0.289 × 0.8 ≈ 0.231).
+    expect(rms(out)).toBeGreaterThan(0.5 / Math.sqrt(3) * 0.8); // near full gain, not merely un-floored
   });
 
   it('the floor is a duck, not a mute (never silences)', () => {
@@ -89,6 +93,23 @@ describe('StreamingVoiceGate', () => {
     const gate = new StreamingVoiceGate(FS);
     const empty = new Float32Array(0);
     expect(gate.process(empty)).toBe(empty);
+  });
+
+  it('ramps gain linearly within a block (de-click), not a step', () => {
+    const gate = new StreamingVoiceGate(FS);
+    const c = 0.1;
+    const dc = (): Float32Array => new Float32Array(N).fill(c); // steady DC → score decays, no real modulation
+    // Advance until the gate starts ducking (reductionDb > 0 marks the first transition block).
+    let out: Float32Array = new Float32Array(N);
+    let transitionFound = false;
+    for (let i = 0; i < 50; i++) {
+      out = gate.process(dc());
+      if (gate.reductionDb > 0) { transitionFound = true; break; }
+    }
+    expect(transitionFound).toBe(true); // ensure we actually tested a transition block
+    // On a transition block the gain ramps from the (high) start gain to the (lower) end gain:
+    expect(out[0]!).toBeGreaterThan(out[N - 1]!); // a flat step would make these equal
+    expect(out[0]!).toBeCloseTo(c, 2); // started at ~unity gain (transition start gain ≈ 1)
   });
 
   it('reset() restores an open gate', () => {

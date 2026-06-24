@@ -76,7 +76,7 @@ export class StreamingVoiceGate {
     const gNew = this.gain + a * (target - this.gain);
     const out = new Float32Array(n);
     if (n === 1) {
-      out[0] = block[0]! * gNew;
+      out[0] = block[0]! * this.gain; // linspace(gain, gNew, 1) === [gain] — apply the OLD gain (Python parity)
     } else {
       const step = (gNew - this.gain) / (n - 1); // de-click: linear ramp across the block
       for (let i = 0; i < n; i++) out[i] = block[i]! * (this.gain + step * i);
