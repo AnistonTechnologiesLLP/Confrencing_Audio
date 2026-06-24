@@ -11,6 +11,12 @@ The JSON **config schema** is versioned independently via `CONFIG_VERSION`
 ## [Unreleased]
 
 ### Added
+- **In-app Live visualizer** — the browser configurator (`index.html`) gains a **Live** tab that runs the
+  zero-dependency live-audio core (`./live`) on a synthetic plane-wave talker: a top-down canvas shows the
+  8-capsule array, a draggable talker, the SRP-PHAT DOA ticks, and the teal beam re-aiming under Follow
+  auto-steer, with noise-suppression + dereverb toggles and a live RMS/DOA readout. Driven by a new
+  browser-safe `ManualCaptureAdapter` (host-fed `push(channels)` capture, exported from `./live`). Real
+  8-channel capture stays Node-only; this visualizes the DSP *behavior* on synthetic input.
 - **Live audio (Phase 1, Node)** — a real-time fractional-delay-and-sum beamformer. A pure,
   zero-dependency, browser-safe core (`./live`: `LiveEngine`, `StreamingDelaySumBeam`, `LevelMeter`,
   `MockCaptureAdapter`, `CaptureAdapter`) plus a Node-only POLARIS capture adapter + output sink

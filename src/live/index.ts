@@ -13,6 +13,8 @@ export {
 export { LevelMeter } from './meter.js';
 export { LiveEngine } from './engine.js';
 export { MockCaptureAdapter, planeWaveChannels } from './mock-adapter.js';
+export { ManualCaptureAdapter } from './manual-adapter.js';
+export { sensibel8, type ArrayGeometry } from '../beamformer/geometry.js';
 export type {
   CaptureAdapter,
   CaptureDevice,

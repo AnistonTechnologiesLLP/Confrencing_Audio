@@ -511,6 +511,12 @@ A real-time **fractional-delay-and-sum** beamformer over a pluggable capture ada
 POLARIS capture path is a **Node-only** backend (`conferencing-audio-pipeline/live-node`) built on the
 optional native addon `naudiodon2`.
 
+**See it run in the browser:** `npm run web`, then open the **Live** tab in the app. It drives this exact
+core on a *synthetic* plane-wave talker (browser 8-channel capture is infeasible — `getUserMedia` downmixes
+to stereo), so you can drag the talker, toggle auto-steer / noise-suppression / dereverb, and watch the beam
+track the talker via SRP-PHAT — all visualized on a top-down room canvas. The synthetic driver is the
+browser-safe `ManualCaptureAdapter` (the host feeds one block per animation frame via `push(channels)`).
+
 ```ts
 import { LiveEngine } from 'conferencing-audio-pipeline/live';
 import { NodeCaptureAdapter, NodeOutputSink } from 'conferencing-audio-pipeline/live-node';
