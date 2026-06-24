@@ -36,6 +36,13 @@ The JSON **config schema** is versioned independently via `CONFIG_VERSION`
   behavior). `BeamOutput.cleaning` surfaces the active stage. Pure DSP — the exponential integral is
   vendored, so it adds no dependency. Ported from the Python `_PostNoiseSuppressor` / `StreamingCleaner`
   / `_LevelPreservingCleaner`. Dereverb / AEC / AGC are later sub-phases; DFN3 (ONNX) deferred.
+- **Real-time dereverb (Phase 3b)** — opt-in `StreamingDereverb` (`dereverb.ts`), a single-channel
+  Lebart/Habets late-reverb spectral-subtraction stage built on the Phase-3a STFT base (overrides only the
+  gain law + a small power-history ring). Composes before the denoiser via a new `ChainedCleaner`
+  (`cleaner-chain.ts`), matching the Python stage order (dereverb → post-NR). Wired through
+  `LiveConfig.cleaning.dereverb` (`engine` is now optional so dereverb can run alone); `BeamOutput.cleaning`
+  surfaces an omit-when-absent `dereverb` flag (Phase-3a shapes unchanged). Pure DSP — no new dependency.
+  Ported from the Python `StreamingDereverb`. AEC / AGC / PEQ are later sub-phases.
 - **Microphone-array mounting bearing** (schema **v4 → v5**) — `MicrophoneArray` gains
   an optional `bearingDeg` (compass heading of the array's 0° reference, 0° = +Y), so a
   detected array-relative azimuth can be mapped into room coordinates — the prerequisite

@@ -577,6 +577,29 @@ latency when active (none when off); the floor needs ~0.7 s to warm up (bit-exac
 the makeup is boost-only and capped at 8 dB. Dereverb, AEC, and AGC/PEQ are later sub-phases;
 DeepFilterNet3 (which needs ONNX) is an optional far-future add — the pure-DSP OM-LSA is the proven cut.
 
+### Dereverb (Phase 3b)
+
+Add an opt-in dereverb stage that runs **before** the denoiser to strip the late-reverberation tail
+(the boxy/distant room "ring"):
+
+```ts
+const engine = new LiveEngine(new NodeCaptureAdapter(), {
+  geom, deviceName: 'SB-POLARIS', sampleRate: 44100,
+  cleaning: { dereverb: { t60: 0.5 }, engine: 'omlsa', preserveLevel: true }, // dereverb → OM-LSA → makeup
+});
+```
+
+- `dereverb: { t60?, beta?, gminDb?, earlyMs? }` — single-channel Lebart/Habets **late-reverb spectral
+  subtraction** (`G = max(1 − β·R/P, Gmin)`), where `R` is a T60-decayed estimate of a delayed power tap.
+  Defaults: `t60 0.5 s`, `β 1.6`, `Gmin −10 dB`, `early 48 ms`.
+- It composes with the 3a denoiser as an ordered chain (`dereverb → denoise`); the level-preserving makeup
+  (if on) wraps the whole chain. Omitting `cleaning.dereverb` is byte-identical to Phase 3a.
+
+Still zero-dependency (pure DSP). **Honest limits:** statistical single-channel dereverb (not an inverse/RIR
+deconvolution); assumes a fixed T60; shares the ~12 ms STFT latency and ~0.7 s warmup; only LATE reverb
+(older than `earlyMs`) is suppressed — early reflections are kept; the gain floor (−10 dB) means it never
+hard-mutes. AEC and AGC/PEQ are later sub-phases.
+
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md) for the version history.
