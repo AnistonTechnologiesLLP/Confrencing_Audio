@@ -11,6 +11,17 @@ The JSON **config schema** is versioned independently via `CONFIG_VERSION`
 ## [Unreleased]
 
 ### Added
+- **In-app Live visualizer** — the browser configurator (`index.html`) gains a **Live** tab that runs the
+  zero-dependency live-audio core (`./live`) on a synthetic plane-wave talker: a top-down canvas shows the
+  8-capsule array, a draggable talker, the SRP-PHAT DOA ticks, and the teal beam re-aiming under Follow
+  auto-steer, with noise-suppression + dereverb toggles and a live RMS/DOA readout. Driven by a new
+  browser-safe `ManualCaptureAdapter` (host-fed `push(channels)` capture, exported from `./live`).
+  The tab also has a **Live device (Node host)** mode with **Input / Output device pickers** and a
+  Connect button: `serve.mjs` gains `/api/live/{devices,start,stop,telemetry}` endpoints that enumerate
+  audio devices, run a `LiveEngine` on the chosen POLARIS input (`NodeCaptureAdapter`), play the cleaned
+  mono to the chosen output (`NodeOutputSink`, now device-selectable), and stream BeamOutput telemetry
+  over SSE to the canvas — Python-LIVE-mode parity. The device mode needs `naudiodon2` + the array on the
+  host; without them it reports unavailable and the synthetic mode is the fallback.
 - **Live audio (Phase 1, Node)** — a real-time fractional-delay-and-sum beamformer. A pure,
   zero-dependency, browser-safe core (`./live`: `LiveEngine`, `StreamingDelaySumBeam`, `LevelMeter`,
   `MockCaptureAdapter`, `CaptureAdapter`) plus a Node-only POLARIS capture adapter + output sink

@@ -26,10 +26,16 @@ export class NodeOutputSink {
     }
   }
 
-  async start(sampleRate: number): Promise<void> {
+  async start(sampleRate: number, deviceId?: number): Promise<void> {
     const na = await this.load();
     this.io = new na.AudioIO({
-      outOptions: { channelCount: 1, sampleFormat: na.SampleFormat16Bit, sampleRate, closeOnError: true },
+      outOptions: {
+        channelCount: 1,
+        sampleFormat: na.SampleFormat16Bit,
+        sampleRate,
+        closeOnError: true,
+        ...(deviceId !== undefined ? { deviceId } : {}),
+      },
     });
     this.io.start();
   }
