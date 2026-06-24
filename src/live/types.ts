@@ -57,6 +57,7 @@ export interface BeamOutput {
   cleaning?: { engine: string; preserved: boolean; dereverb?: boolean };
   aec?: { erleDb: number; farendActive: boolean };
   agc?: { gainLinear: number };
+  voiceGate?: { open: boolean; reductionDb: number; score: number };
 }
 
 export interface AecConfig {
@@ -78,6 +79,21 @@ export interface AgcConfig {
 /** Parametric-EQ config: up to {@link PEQ_MAX_BANDS} RBJ bands (the shared PEQ model). */
 export interface PeqConfig {
   bands: PeqBand[];
+}
+
+/** Opt-in speech band-limit: a gentle HP and/or LP (reuses the PEQ biquads). At least one cutoff to be active. */
+export interface BandLimitConfig {
+  highpassHz?: number;
+  lowpassHz?: number;
+}
+
+/** Opt-in voice-only output gate config. */
+export interface VoiceGateConfig {
+  threshold?: number;
+  floorDb?: number;
+  attackMs?: number;
+  releaseMs?: number;
+  modRef?: number;
 }
 
 /** Opt-in post-beam noise suppression config. */
@@ -104,4 +120,6 @@ export interface LiveConfig {
   aec?: AecConfig;
   agc?: AgcConfig;
   peq?: PeqConfig;
+  bandLimit?: BandLimitConfig;
+  voiceGate?: VoiceGateConfig;
 }
