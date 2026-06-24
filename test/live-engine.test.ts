@@ -330,3 +330,32 @@ describe('LiveEngine dereverb (Phase 3b)', () => {
     expect(onRms).toBeLessThanOrEqual(offRms + 1e-6);
   });
 });
+
+describe('LiveEngine AEC (Phase 3c)', () => {
+  const geom = sensibel8(0.04);
+  function mock() { return new MockCaptureAdapter({ channels: 8, azimuthDeg: 90, blocks: 40, blockSize: 256, freqHz: 1500 }); }
+
+  it('aec absent ⇒ no aec field (byte-identical to Phase 3b)', async () => {
+    const engine = new LiveEngine(mock(), { geom, deviceName: 'MOCK-8', sampleRate: 44100, azimuthDeg: 90 });
+    let aecField: unknown = 'unset';
+    engine.onOutput((o) => { aecField = (o as { aec?: unknown }).aec; });
+    await engine.start();
+    expect(aecField).toBeUndefined();
+  });
+
+  it('aec config ⇒ BeamOutput.aec is surfaced and runs', async () => {
+    const engine = new LiveEngine(mock(), { geom, deviceName: 'MOCK-8', sampleRate: 44100, azimuthDeg: 90, aec: {} });
+    let aec: unknown = 'unset';
+    engine.onOutput((o) => { aec = (o as { aec?: unknown }).aec; });
+    await engine.start();
+    expect(aec).toBeDefined();
+    const a = aec as { erleDb: number; farendActive: boolean };
+    expect(typeof a.erleDb).toBe('number');
+    expect(typeof a.farendActive).toBe('boolean');
+  });
+
+  it('pushReference is a no-op when AEC is not configured (does not throw)', () => {
+    const engine = new LiveEngine(mock(), { geom, deviceName: 'MOCK-8', sampleRate: 44100, azimuthDeg: 90 });
+    expect(() => engine.pushReference(new Float32Array(256))).not.toThrow();
+  });
+});

@@ -54,6 +54,16 @@ export interface BeamOutput {
   mode?: AutoSteerMode;
   lockedTarget?: { azimuthDeg: number; seatId?: string } | null;
   cleaning?: { engine: string; preserved: boolean; dereverb?: boolean };
+  aec?: { erleDb: number; farendActive: boolean };
+}
+
+export interface AecConfig {
+  nTaps?: number;
+  mu?: number;
+  leak?: number;
+  refFloor?: number;
+  /** Reference-ring length in seconds (default 2). */
+  refSeconds?: number;
 }
 
 /** Opt-in post-beam noise suppression config. */
@@ -77,4 +87,5 @@ export interface LiveConfig {
   taps?: number;
   autoSteer?: AutoSteerConfig;
   cleaning?: CleaningConfig;
+  aec?: AecConfig;
 }
