@@ -3,6 +3,9 @@
  * per captured block. Pure orchestration (no node:* / no audio I/O of its own).
  */
 import type { CaptureAdapter, LiveConfig, BeamOutput, AutoSteerMode, CleaningConfig, AecConfig, AgcConfig } from './types.js';
+import { MultiBeamMixer } from './multi-beam-mixer.js';
+import { BeamSlotTracker, snapTargets, type BeamSlot } from './slot-tracker.js';
+import { composeNulls } from './null-budget.js';
 import { StreamingVoiceGate } from './voice-gate.js';
 import type { PeqBand } from '../model/dsp-blocks.js';
 import { TargetLoudnessAgc } from './agc.js';
@@ -10,6 +13,8 @@ import { StreamingPeq } from './peq.js';
 import { StreamingAec } from './aec.js';
 import { ReferenceRing } from './reference-ring.js';
 import { StreamingDelaySumBeam } from './beam.js';
+import type { LiveBeam } from './beam.js';
+import { FreqDomainBeam } from './freq-domain-beam.js';
 import { LevelMeter } from './meter.js';
 import { StreamingCovarianceAccumulator } from './covariance.js';
 import { detect, type DoaResult, type DetectOptions } from './doa.js';
@@ -24,7 +29,8 @@ import { ChainedCleaner } from './cleaner-chain.js';
 export class LiveEngine {
   private readonly adapter: CaptureAdapter;
   private readonly config: LiveConfig;
-  private readonly beam: StreamingDelaySumBeam;
+  private readonly beam: LiveBeam;
+  private readonly freqBeam: FreqDomainBeam | null;
   private readonly meter = new LevelMeter();
   private _azimuthDeg: number;
   private _offNadirDeg: number;
@@ -47,22 +53,49 @@ export class LiveEngine {
   private peq: StreamingPeq | null = null;
   private bandLimit: StreamingPeq | null = null;
   private voiceGate: StreamingVoiceGate | null = null;
+  private readonly mixer: MultiBeamMixer | null;
+  private readonly slotTracker: BeamSlotTracker | null;
+  private lastSlots: BeamSlot[] = [];
+  private lastGates: number[] = [];
+  private _tSec = 0;
 
   constructor(adapter: CaptureAdapter, config: LiveConfig) {
     this.adapter = adapter;
     this.config = config;
     this._azimuthDeg = config.azimuthDeg ?? 0;
     this._offNadirDeg = config.offNadirDeg ?? 90;
-    this.beam = new StreamingDelaySumBeam(config.geom, config.sampleRate ?? 44100, {
-      ...(config.taps !== undefined ? { taps: config.taps } : {}),
-    });
+    const sr = config.sampleRate ?? 44100;
+    this.beam =
+      config.beam === 'freqDomain'
+        ? new FreqDomainBeam(config.geom, sr, { offNadirDeg: this._offNadirDeg })
+        : new StreamingDelaySumBeam(config.geom, sr, {
+            ...(config.taps !== undefined ? { taps: config.taps } : {}),
+          });
     this.beam.setLook(this._azimuthDeg, this._offNadirDeg);
-    // --- Phase 2: optional auto-steer ---
+    this.freqBeam = this.beam instanceof FreqDomainBeam ? this.beam : null;
+    // Apply static exclusion/seat nulls once now (before the DOA cycle runs, so they take effect
+    // even when autoSteer is off / no DOA cycle is configured).
+    if (this.freqBeam && config.nulls) {
+      const nc = config.nulls;
+      const M = config.geom.activeIndices().length - 1;
+      const composed = composeNulls(this._azimuthDeg, [], M, {
+        ...(nc.exclusionDeg ? { exclusion: nc.exclusionDeg } : {}),
+        ...(nc.seatDeg ? { seats: nc.seatDeg } : {}),
+        ...(nc.seatNullMaxCount !== undefined ? { seatNullMaxCount: nc.seatNullMaxCount } : {}),
+      });
+      this.freqBeam.setNulls(composed);
+    }
+    // --- Phase 2: optional auto-steer / multi-beam DOA cycle ---
     const as = config.autoSteer;
+    const mb0 = config.multiBeam;
+    if ((as && as.mode !== 'manual') || mb0 !== undefined) {
+      // Build the covariance accumulator whenever auto-steer OR multi-beam needs DOA.
+      this.cov = new StreamingCovarianceAccumulator({ channels: config.geom.nChannels, sampleRate: config.sampleRate ?? 44100 });
+      this.detectionHops = as?.detectionHops ?? mb0?.detectionHops ?? 11;
+      this.doaOpts = as?.doa ?? {};
+    }
     if (as && as.mode !== 'manual') {
       this._mode = as.mode;
-      this.cov = new StreamingCovarianceAccumulator({ channels: config.geom.nChannels, sampleRate: config.sampleRate ?? 44100 });
-      this.detectionHops = as.detectionHops ?? 11;
       // Resolve the seat azimuth once for lock-seat; fall back to follow if unresolved.
       let mode: 'follow' | 'lockSeat' = as.mode;
       let lockAz: number | undefined;
@@ -82,7 +115,6 @@ export class LiveEngine {
         ...(as.holdHops !== undefined ? { holdHops: as.holdHops } : {}),
       };
       this.autosteer = new AutoSteerController(opts);
-      this.doaOpts = as.doa ?? {};
     }
     // --- Phase 3a/3b: optional post-beam cleaning chain (dereverb → denoise) ---
     const cc: CleaningConfig | undefined = config.cleaning;
@@ -139,6 +171,23 @@ export class LiveEngine {
     if (config.voiceGate) {
       this.voiceGate = new StreamingVoiceGate(config.sampleRate ?? 44100, config.voiceGate);
     }
+    // --- Multi-beam (multi-talker) opt-in ---
+    const mb = config.multiBeam;
+    if (mb !== undefined) {
+      const { nBeams, holdSeconds, matchRadiusDeg } = mb;
+      this.mixer = new MultiBeamMixer(config.geom, sr, {
+        offNadirDeg: this._offNadirDeg,
+        ...(nBeams !== undefined ? { nBeams } : {}),
+      });
+      this.slotTracker = new BeamSlotTracker({
+        ...(nBeams !== undefined ? { nSlots: nBeams } : {}),
+        ...(holdSeconds !== undefined ? { holdSeconds } : {}),
+        ...(matchRadiusDeg !== undefined ? { matchRadiusDeg } : {}),
+      });
+    } else {
+      this.mixer = null;
+      this.slotTracker = null;
+    }
   }
 
   get azimuthDeg(): number {
@@ -170,7 +219,16 @@ export class LiveEngine {
       channels: this.config.geom.nChannels,
       sampleRate: this.config.sampleRate ?? 44100,
       onBlock: (channels) => {
-        let mono: Float32Array = this.beam.process(channels);
+        const n = channels[0]?.length ?? 0;
+        this._tSec += n / (this.config.sampleRate ?? 44100);
+        let mono: Float32Array;
+        if (this.mixer) {
+          const r = this.mixer.processBlock(channels);
+          mono = r.mixed;
+          this.lastGates = r.gates;
+        } else {
+          mono = this.beam.process(channels);
+        }
         // Phase 3c: cancel far-end echo first (before dereverb/denoise + the meter).
         if (this.aec && this.refRing) {
           if (this.refScratch.length !== mono.length) this.refScratch = new Float32Array(mono.length);
@@ -193,15 +251,37 @@ export class LiveEngine {
         if (this.voiceGate) mono = this.voiceGate.process(mono);
         this.meter.update(mono);
         // Phase 2: feed covariance + run DOA/steer on the configured hop cadence.
-        if (this.cov && this.autosteer) {
+        // Runs when EITHER auto-steer or multi-beam is configured (both need DOA).
+        if (this.cov && (this.autosteer || this.mixer)) {
           this.cov.accumulate(channels);
           if (this.cov.framesSeen - this.lastFrames >= this.detectionHops) {
             this.lastFrames = this.cov.framesSeen;
             const snap = this.cov.snapshot();
             if (snap) {
               this.lastDoa = detect(snap.rBand, snap.freqs, this.config.geom, this.doaOpts);
-              const decision = this.autosteer.decide(this.lastDoa);
-              if (decision.lookAzimuthDeg !== null) this.setLook(decision.lookAzimuthDeg);
+              if (this.mixer && this.slotTracker) {
+                const targets = snapTargets(this.lastDoa.detections.map((d) => ({ azimuthDeg: d.azimuthDeg, salienceDb: d.salienceDb })));
+                this.lastSlots = this.slotTracker.update(targets, this._tSec);
+                this.mixer.setSlots(this.lastSlots);
+              }
+              if (this.autosteer) {
+                const decision = this.autosteer.decide(this.lastDoa);
+                if (decision.lookAzimuthDeg !== null) this.setLook(decision.lookAzimuthDeg);
+              }
+              // Refine nulls with detected interferers (auto-null path).
+              const nc = this.config.nulls;
+              if (nc && this.freqBeam) {
+                const detected = nc.autoNullInterferers
+                  ? this.lastDoa.detections.map((d) => d.azimuthDeg).filter((a) => Math.abs(a - this._azimuthDeg) >= 8)
+                  : [];
+                const M = this.config.geom.activeIndices().length - 1;
+                const composed = composeNulls(this._azimuthDeg, detected, M, {
+                  ...(nc.exclusionDeg ? { exclusion: nc.exclusionDeg } : {}),
+                  ...(nc.seatDeg ? { seats: nc.seatDeg } : {}),
+                  ...(nc.seatNullMaxCount !== undefined ? { seatNullMaxCount: nc.seatNullMaxCount } : {}),
+                });
+                this.freqBeam.setNulls(composed);
+              }
             }
           }
         }
@@ -226,6 +306,8 @@ export class LiveEngine {
           ...(this.aecActive && this.aec ? { aec: { erleDb: this.aec.erleDb, farendActive: this.aec.farendActive } } : {}),
           ...(this.agc ? { agc: { gainLinear: this.agc.gainLinear } } : {}),
           ...(this.voiceGate ? { voiceGate: { open: this.voiceGate.gateOpen, reductionDb: this.voiceGate.reductionDb, score: this.voiceGate.score } } : {}),
+          ...(this.freqBeam && this.config.nulls ? { activeNulls: this.freqBeam.activeNulls } : {}),
+          ...(this.mixer ? { multiBeam: { slots: this.lastSlots.map((s) => ({ azimuthDeg: s.azimuthDeg, active: s.active, held: s.held })), gates: this.lastGates } } : {}),
         });
       },
     });

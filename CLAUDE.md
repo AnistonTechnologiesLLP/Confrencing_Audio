@@ -155,6 +155,21 @@ Key structural facts that span files:
   default-off byte-identical, zero-dep. (NB: the Python's literal "band-limit" is the beam anti-alias FIR — a
   beamformer concern — not a chain stage; this band-limit is a speech-band trim.)
 
+- **Frequency-domain null-steering + multi-talker beam (Phase A, `src/live/{mvdr-solver,freq-domain-beam,
+  null-budget,slot-tracker,multi-beam-mixer}.ts`).** An opt-in upgrade to the live **beam** (the front of the
+  chain), all default-off byte-identical. `mvdr-solver.ts` `computeBeamWeights` is the per-FFT-bin LCMV/MVDR
+  kernel (`R=Γ(f)+loading·I`; K=0 MVDR, K>0 LCMV+DC-ridge; reuses the offline `steeringVector`/`diffuseCoherence`/
+  the now-exported complex `solve`). `freq-domain-beam.ts` `FreqDomainBeam` (opt-in `LiveConfig.beam:'freqDomain'`,
+  implements the new `LiveBeam` interface alongside `StreamingDelaySumBeam`) is a Hann-1024/512 STFT applying
+  those weights as a pure MAC (`Y=Σ conj(W)·X`); superdirective beats delay-sum off-axis at **low** frequency.
+  `null-budget.ts` `composeNulls` (`LiveConfig.nulls`) budgets detected→exclusion→seat nulls into the LCMV path
+  (`BeamOutput.activeNulls`); `slot-tracker.ts` `BeamSlotTracker` + `multi-beam-mixer.ts` `MultiBeamMixer`/
+  `nomAutomix` (`LiveConfig.multiBeam`) run N beams each nulling the others, gated + NOM-automixed
+  (`BeamOutput.multiBeam`); multi-beam brings its own DOA. The per-bin solve runs only on re-steer (single-thread
+  ⇒ atomic publish), never per block; ~35 ms latency when active. **Verified bit-exact vs the Python**
+  (`polaris_beamformer.py:_FreqDomainBeam`, `multibeam.py`). Zero-dep. Deferred: data-adaptive measured-R MVDR
+  (needs a noise-gated covariance), RTF-MVDR.
+
 ## Conventions
 
 - **Relative imports carry a `.js` extension** even though sources are `.ts` (ESM resolution). Match this —

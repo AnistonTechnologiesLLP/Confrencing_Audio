@@ -11,6 +11,29 @@ The JSON **config schema** is versioned independently via `CONFIG_VERSION`
 ## [Unreleased]
 
 ### Added
+- **Live frequency-domain null-steering + multi-talker beamforming (Phase A)** — an opt-in, zero-dependency
+  upgrade to the live beam, all default-off byte-identical:
+  - **`freqDomain` beam mode** (`LiveConfig.beam: 'delaySum' | 'freqDomain'`) — a Hann-1024/512 overlap-add
+    STFT that applies per-FFT-bin **superdirective** (diffuse-noise MVDR) weights as a pure
+    multiply-accumulate (`freq-domain-beam.ts` + the per-bin solver `mvdr-solver.ts`, reusing the validated
+    narrowband design layer). It rejects isotropic room noise far better than delay-and-sum at low frequency
+    (measured −19 dB vs −1.5 dB off-axis at 800 Hz — where rumble/HVAC live). Single-threaded, so the weight
+    publish is atomic; the heavy per-bin solve runs only on a re-steer, never per block. ~35 ms latency when
+    active.
+  - **Null-steering** (`LiveConfig.nulls`) — a deterministic null-budget arbiter (`composeNulls`, `null-budget.ts`)
+    merges detected-interferer / user-exclusion / empty-seat bearings into the LCMV constraint (precedence
+    detected → exclusion → seat, near-look drop, cross-source dedupe, `M−1` budget). The freq-domain beam places
+    exact spatial nulls (measured −66 dB at the nulled bearing while the look stays unity); `BeamOutput.activeNulls`
+    reports them. Auto-nulls detected interferers from the DOA layer.
+  - **Multi-talker mode** (`LiveConfig.multiBeam`) — N simultaneous frequency-domain beams (`MultiBeamMixer` +
+    `BeamSlotTracker`), each steered to a persistent talker slot while **nulling the other talkers**, gated by a
+    level-invariant speech-presence score and **NOM-automixed** (`mixed = Σ gₖ·monoₖ / max(1, √Σg)`). A slot keeps
+    the same talker across ticks (seat/bearing match) with per-slot hold; `BeamOutput.multiBeam` reports the
+    per-slot state + gates. Multi-beam brings its own DOA (no separate auto-steer needed).
+  - Built test-first via subagent-driven development across 5 sub-phases; verified by a 3-lens adversarial
+    whole-branch review whose **DSP-math lens bit-exact cross-validated every module against the Python**
+    (`polaris_beamformer.py:_FreqDomainBeam`, `multibeam.py`) — beam + automix matched bit-for-bit, the solver to
+    ≤6e-8. Still zero runtime dependencies (the FFT, biquad, and complex solver are all hand-rolled).
 - **In-app Live visualizer** — the browser configurator (`index.html`) gains a **Live** tab that runs the
   zero-dependency live-audio core (`./live`) on a synthetic plane-wave talker: a top-down canvas shows the
   8-capsule array, a draggable talker, the SRP-PHAT DOA ticks, and the teal beam re-aiming under Follow
