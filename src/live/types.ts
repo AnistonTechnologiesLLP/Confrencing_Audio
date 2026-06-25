@@ -60,6 +60,8 @@ export interface BeamOutput {
   voiceGate?: { open: boolean; reductionDb: number; score: number };
   /** Currently-applied null bearings (array-relative deg). Omitted when nulls config is absent or beam is delay-sum. */
   activeNulls?: number[];
+  /** Opt-in multi-beam slot + gate telemetry. Omitted when multiBeam config is absent. */
+  multiBeam?: { slots: { azimuthDeg: number | null; active: boolean; held: boolean }[]; gates: number[] };
 }
 
 export interface AecConfig {
@@ -121,6 +123,13 @@ export interface NullsConfig {
   seatNullMaxCount?: number;
 }
 
+/** Opt-in multi-beam (multi-talker) config. */
+export interface MultiBeamConfig {
+  nBeams?: number;
+  holdSeconds?: number;
+  matchRadiusDeg?: number;
+}
+
 /** Engine configuration. */
 export interface LiveConfig {
   geom: ArrayGeometry;
@@ -138,4 +147,6 @@ export interface LiveConfig {
   peq?: PeqConfig;
   bandLimit?: BandLimitConfig;
   voiceGate?: VoiceGateConfig;
+  /** Opt-in multi-beam (multi-talker) mode. When set, the engine builds a MultiBeamMixer driven by the DOA cycle. */
+  multiBeam?: MultiBeamConfig;
 }

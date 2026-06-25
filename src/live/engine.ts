@@ -3,6 +3,8 @@
  * per captured block. Pure orchestration (no node:* / no audio I/O of its own).
  */
 import type { CaptureAdapter, LiveConfig, BeamOutput, AutoSteerMode, CleaningConfig, AecConfig, AgcConfig } from './types.js';
+import { MultiBeamMixer } from './multi-beam-mixer.js';
+import { BeamSlotTracker, snapTargets, type BeamSlot } from './slot-tracker.js';
 import { composeNulls } from './null-budget.js';
 import { StreamingVoiceGate } from './voice-gate.js';
 import type { PeqBand } from '../model/dsp-blocks.js';
@@ -51,6 +53,11 @@ export class LiveEngine {
   private peq: StreamingPeq | null = null;
   private bandLimit: StreamingPeq | null = null;
   private voiceGate: StreamingVoiceGate | null = null;
+  private readonly mixer: MultiBeamMixer | null;
+  private readonly slotTracker: BeamSlotTracker | null;
+  private lastSlots: BeamSlot[] = [];
+  private lastGates: number[] = [];
+  private _tSec = 0;
 
   constructor(adapter: CaptureAdapter, config: LiveConfig) {
     this.adapter = adapter;
@@ -160,6 +167,23 @@ export class LiveEngine {
     if (config.voiceGate) {
       this.voiceGate = new StreamingVoiceGate(config.sampleRate ?? 44100, config.voiceGate);
     }
+    // --- Multi-beam (multi-talker) opt-in ---
+    const mb = config.multiBeam;
+    if (mb !== undefined) {
+      const { nBeams, holdSeconds, matchRadiusDeg } = mb;
+      this.mixer = new MultiBeamMixer(config.geom, sr, {
+        offNadirDeg: this._offNadirDeg,
+        ...(nBeams !== undefined ? { nBeams } : {}),
+      });
+      this.slotTracker = new BeamSlotTracker({
+        ...(nBeams !== undefined ? { nSlots: nBeams } : {}),
+        ...(holdSeconds !== undefined ? { holdSeconds } : {}),
+        ...(matchRadiusDeg !== undefined ? { matchRadiusDeg } : {}),
+      });
+    } else {
+      this.mixer = null;
+      this.slotTracker = null;
+    }
   }
 
   get azimuthDeg(): number {
@@ -191,7 +215,16 @@ export class LiveEngine {
       channels: this.config.geom.nChannels,
       sampleRate: this.config.sampleRate ?? 44100,
       onBlock: (channels) => {
-        let mono: Float32Array = this.beam.process(channels);
+        const n = channels[0]?.length ?? 0;
+        this._tSec += n / (this.config.sampleRate ?? 44100);
+        let mono: Float32Array;
+        if (this.mixer) {
+          const r = this.mixer.processBlock(channels);
+          mono = r.mixed;
+          this.lastGates = r.gates;
+        } else {
+          mono = this.beam.process(channels);
+        }
         // Phase 3c: cancel far-end echo first (before dereverb/denoise + the meter).
         if (this.aec && this.refRing) {
           if (this.refScratch.length !== mono.length) this.refScratch = new Float32Array(mono.length);
@@ -221,6 +254,11 @@ export class LiveEngine {
             const snap = this.cov.snapshot();
             if (snap) {
               this.lastDoa = detect(snap.rBand, snap.freqs, this.config.geom, this.doaOpts);
+              if (this.mixer && this.slotTracker) {
+                const targets = snapTargets(this.lastDoa.detections.map((d) => ({ azimuthDeg: d.azimuthDeg, salienceDb: d.salienceDb })));
+                this.lastSlots = this.slotTracker.update(targets, this._tSec);
+                this.mixer.setSlots(this.lastSlots);
+              }
               const decision = this.autosteer.decide(this.lastDoa);
               if (decision.lookAzimuthDeg !== null) this.setLook(decision.lookAzimuthDeg);
               // Refine nulls with detected interferers (auto-null path).
@@ -262,6 +300,7 @@ export class LiveEngine {
           ...(this.agc ? { agc: { gainLinear: this.agc.gainLinear } } : {}),
           ...(this.voiceGate ? { voiceGate: { open: this.voiceGate.gateOpen, reductionDb: this.voiceGate.reductionDb, score: this.voiceGate.score } } : {}),
           ...(this.freqBeam && this.config.nulls ? { activeNulls: this.freqBeam.activeNulls } : {}),
+          ...(this.mixer ? { multiBeam: { slots: this.lastSlots.map((s) => ({ azimuthDeg: s.azimuthDeg, active: s.active, held: s.held })), gates: this.lastGates } } : {}),
         });
       },
     });

@@ -56,3 +56,6 @@ export { SpeechPresenceScorer, alphaFor, VG_HOP_SECONDS, VG_TAU_FAST, VG_TAU_SLO
 export { StreamingVoiceGate, VG_THRESHOLD, VG_FLOOR_DB, VG_ATTACK_MS, VG_RELEASE_MS, type VoiceGateOptions } from './voice-gate.js';
 export type { BandLimitConfig, VoiceGateConfig, NullsConfig } from './types.js';
 export { composeNulls, NULL_MIN_SEP_DEG, NULL_MERGE_SEP_DEG, type ComposeNullsOptions } from './null-budget.js';
+export { MultiBeamMixer, nomAutomix, type MultiBeamOptions } from './multi-beam-mixer.js';
+export { BeamSlotTracker, snapTargets, DEFAULT_N_BEAMS, DEFAULT_HOLD_SECONDS, DEFAULT_MATCH_RADIUS_DEG, type BeamSlot, type BeamTarget, type SlotTrackerOptions } from './slot-tracker.js';
+export type { MultiBeamConfig } from './types.js';
