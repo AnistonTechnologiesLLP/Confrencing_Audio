@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { directionUnit, fracDelayKernel, steerRealDelays, StreamingDelaySumBeam } from '../src/live/beam.js';
 import { sensibel8, SOUND_SPEED_MPS, withActiveChannels } from '../src/beamformer/geometry.js';
+import { planeWaveChannels } from '../src/live/mock-adapter.js';
 
 describe('directionUnit', () => {
   it('matches the canonical az/off-nadir convention', () => {
@@ -147,5 +148,17 @@ describe('StreamingDelaySumBeam', () => {
     expect([...aligned].every((v) => Number.isFinite(v))).toBe(true); // well-defined output
     const tail = (x: Float32Array) => x.subarray(64);
     expect(rms(tail(aligned))).toBeGreaterThan(rms(tail(away)) * 1.5); // still reinforces with 7 capsules
+  });
+
+  it('reset() clears streaming state — re-feeding reproduces a fresh run', () => {
+    const geom = sensibel8(0.04);
+    const beam = new StreamingDelaySumBeam(geom, 44100, {});
+    beam.setLook(40, 90);
+    const mk = (i: number): Float32Array[] => planeWaveChannels(geom, 40, 90, 1000, 44100, 256 + i);
+    const first = beam.process(mk(0)).slice();
+    beam.process(mk(1)); // dirty any history
+    beam.reset();
+    const again = beam.process(mk(0));
+    for (let i = 0; i < first.length; i++) expect(again[i]).toBeCloseTo(first[i]!, 6);
   });
 });
