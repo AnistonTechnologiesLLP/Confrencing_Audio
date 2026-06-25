@@ -115,6 +115,7 @@ export interface LiveConfig {
   azimuthDeg?: number;
   offNadirDeg?: number;
   taps?: number;
+  beam?: 'delaySum' | 'freqDomain';
   autoSteer?: AutoSteerConfig;
   cleaning?: CleaningConfig;
   aec?: AecConfig;

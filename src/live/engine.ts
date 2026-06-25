@@ -10,6 +10,8 @@ import { StreamingPeq } from './peq.js';
 import { StreamingAec } from './aec.js';
 import { ReferenceRing } from './reference-ring.js';
 import { StreamingDelaySumBeam } from './beam.js';
+import type { LiveBeam } from './beam.js';
+import { FreqDomainBeam } from './freq-domain-beam.js';
 import { LevelMeter } from './meter.js';
 import { StreamingCovarianceAccumulator } from './covariance.js';
 import { detect, type DoaResult, type DetectOptions } from './doa.js';
@@ -24,7 +26,7 @@ import { ChainedCleaner } from './cleaner-chain.js';
 export class LiveEngine {
   private readonly adapter: CaptureAdapter;
   private readonly config: LiveConfig;
-  private readonly beam: StreamingDelaySumBeam;
+  private readonly beam: LiveBeam;
   private readonly meter = new LevelMeter();
   private _azimuthDeg: number;
   private _offNadirDeg: number;
@@ -53,9 +55,13 @@ export class LiveEngine {
     this.config = config;
     this._azimuthDeg = config.azimuthDeg ?? 0;
     this._offNadirDeg = config.offNadirDeg ?? 90;
-    this.beam = new StreamingDelaySumBeam(config.geom, config.sampleRate ?? 44100, {
-      ...(config.taps !== undefined ? { taps: config.taps } : {}),
-    });
+    const sr = config.sampleRate ?? 44100;
+    this.beam =
+      config.beam === 'freqDomain'
+        ? new FreqDomainBeam(config.geom, sr, { offNadirDeg: this._offNadirDeg })
+        : new StreamingDelaySumBeam(config.geom, sr, {
+            ...(config.taps !== undefined ? { taps: config.taps } : {}),
+          });
     this.beam.setLook(this._azimuthDeg, this._offNadirDeg);
     // --- Phase 2: optional auto-steer ---
     const as = config.autoSteer;

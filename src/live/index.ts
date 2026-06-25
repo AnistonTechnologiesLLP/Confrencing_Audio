@@ -10,6 +10,8 @@ export {
   StreamingDelaySumBeam,
   DEFAULT_FRACDELAY_TAPS,
 } from './beam.js';
+export type { LiveBeam } from './beam.js';
+export { FreqDomainBeam, FREQ_BEAM_FRAME } from './freq-domain-beam.js';
 export { LevelMeter } from './meter.js';
 export { LiveEngine } from './engine.js';
 export { MockCaptureAdapter, planeWaveChannels } from './mock-adapter.js';
