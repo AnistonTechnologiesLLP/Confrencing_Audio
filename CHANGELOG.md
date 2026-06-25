@@ -11,6 +11,23 @@ The JSON **config schema** is versioned independently via `CONFIG_VERSION`
 ## [Unreleased]
 
 ### Added
+- **Dual-array triangulation (Phase B)** — a zero-dependency 2D-position layer that fuses **two** arrays'
+  bearings into a room-space position fix, resolving the front/back ambiguity a single planar ring physically
+  cannot. Three pure modules under `./live`:
+  - **`triangulation.ts`** — ray-casting from each kit's room pose, least-squares closest-approach of the two
+    bearing rays (`fusePosition` → a `FusedSource` with the 2D point, crossing confidence, miss distance), a
+    polygon **fence** test with a soft margin band, and a hysteresis **`FenceDecider`** that keeps/vetoes a
+    source based on whether its fused position lies inside a user-drawn fence (anti-chatter run-length hold).
+    Reuses the model's `Point2D`/`pointInPolygon`/`normBearing`.
+  - **`kit-selector.ts`** — `KitSelector`, hysteresis selection of the active kit driven by the level-invariant
+    syllabic-modulation speech-presence score (fast attack to a clear winner, hold through pauses, never switch
+    to a non-talker).
+  - **`multi-array-combiner.ts`** — `MultiArrayCombiner`: per-kit speech scores → kit selection → equal-power
+    cross-fade on a switch → **one** combined AGC, with the fence veto dropping a rejected kit from contention
+    AND ducking the output (−60 dB) when the source is outside the fence.
+  - Verified by an adversarial review whose geometry lens hand-confirmed the ray-crossing algebra and found the
+    triangulation + selector **faithful** to the Python (`fence.py`, `multikit.py`); the two combiner findings
+    (output-duck on fence reject, block-derived scorer cadence) were fixed. Zero new dependencies.
 - **In-app Live visualizer** — the browser configurator (`index.html`) gains a **Live** tab that runs the
   zero-dependency live-audio core (`./live`) on a synthetic plane-wave talker: a top-down canvas shows the
   8-capsule array, a draggable talker, the SRP-PHAT DOA ticks, and the teal beam re-aiming under Follow

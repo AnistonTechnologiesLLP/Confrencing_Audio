@@ -155,6 +155,17 @@ Key structural facts that span files:
   default-off byte-identical, zero-dep. (NB: the Python's literal "band-limit" is the beam anti-alias FIR — a
   beamformer concern — not a chain stage; this band-limit is a speech-band trim.)
 
+- **Dual-array triangulation (Phase B, `src/live/{triangulation,kit-selector,multi-array-combiner}.ts`).** A
+  zero-dep 2D-position layer for **two** arrays — fuse their bearings into a room-space fix that resolves
+  front/back. `triangulation.ts` (port of `fence.py`): `fusePosition` (ray-cast from each kit pose →
+  least-squares closest-approach → `FusedSource`), `pointInFence` (polygon + margin band), and a hysteresis
+  `FenceDecider`; reuses the model's `Point2D`/`pointInPolygon`/`normBearing`. `kit-selector.ts` `KitSelector`
+  (port of `multikit.py:KitSelector`) selects the active kit by the level-invariant speech-presence score.
+  `multi-array-combiner.ts` `MultiArrayCombiner` (port of `MultiKitController._produce`): scores → select →
+  equal-power cross-fade → ONE combined AGC, with the fence veto dropping a rejected kit AND ducking the output
+  (−60 dB) when out-of-fence. Pure/testable; the two-`LiveEngine` host wiring (two adapters, clock sync) is a
+  thin node concern, deferred. Triangulation + selector verified faithful to the Python by review.
+
 ## Conventions
 
 - **Relative imports carry a `.js` extension** even though sources are `.ts` (ESM resolution). Match this —
