@@ -11,6 +11,25 @@ The JSON **config schema** is versioned independently via `CONFIG_VERSION`
 ## [Unreleased]
 
 ### Added
+- **DeepFilterNet3 cleaning + a streaming resampler (Phase C)** — an opt-in neural denoiser for the live
+  cleaning chain, with the core kept **zero-dependency**:
+  - **`resampler.ts`** — a from-scratch **phase-coherent streaming polyphase resampler** (Kaiser-windowed-sinc
+    FIR + exact cumulative-integer accounting that keeps the polyphase phase from resetting — the documented
+    dominant-distortion source if done naively). Pure, zero-dep; measured **44.1↔48 kHz round-trip THD+N ≈
+    −90 dB** (an adversarial review numerically reproduced the polyphase to machine epsilon and confirmed
+    drift-free, block-size-independent operation).
+  - **`dfn3-cleaner.ts`** — `Dfn3Cleaner` over the `process(block, noiseGate)` seam: streams the engine-rate
+    mono through the 44.1↔48 kHz resamplers and the 480-sample DFN3 frames (carrying the model state), with an
+    optional lag-aligned dry/wet `mix` and a FIFO. **Realtime-safe**: raw passthrough on prime / underrun / any
+    error (never silence, never a throw). The ONNX session is **injected** (`Dfn3Session` interface) so
+    `src/live/` stays browser-safe and the plumbing is fully unit-tested with a stub.
+  - **Engine wiring** — `LiveConfig.cleaning.engine` gains `'dfn3'`; a host-provided `cleaning.dfn3Session`
+    builds the cleaner, and when it's absent the engine **falls back to the `gate` denoiser** (honestly
+    reported). Default-off byte-identical.
+  - **Honest limits:** the ONNX model is **not bundled** in the package (multi-MB; a host/ops step like the
+    `naudiodon2` native addon), `onnxruntime` is an optional peer-dependency (`dependencies` stays `{}`), and
+    the synchronous `Dfn3Session` seam needs a host async→sync bridge for `onnxruntime-node` (a worker thread or
+    a sync runtime) — deferred host wiring, documented.
 - **Live frequency-domain null-steering + multi-talker beamforming (Phase A)** — an opt-in, zero-dependency
   upgrade to the live beam, all default-off byte-identical:
   - **`freqDomain` beam mode** (`LiveConfig.beam: 'delaySum' | 'freqDomain'`) — a Hann-1024/512 overlap-add
