@@ -46,6 +46,7 @@ export class FreqDomainBeam implements LiveBeam {
   private W: Complex[][];                  // [nb][M]
   private azimuthDeg = 0;
   private offNadirDeg: number;
+  private nullsDeg: number[] = [];
 
   constructor(geom: ArrayGeometry, sampleRate: number, opts: FreqDomainBeamOptions = {}) {
     this.geom = geom;
@@ -76,7 +77,8 @@ export class FreqDomainBeam implements LiveBeam {
 
   private recompute(): void {
     const look = bearingDirection(this.azimuthDeg, this.offNadirDeg);
-    this.W = computeBeamWeights(this.geom, this.freqsHz, look, [], { loading: this.loading });
+    const nullDirs = this.nullsDeg.map((az) => bearingDirection(az, this.offNadirDeg));
+    this.W = computeBeamWeights(this.geom, this.freqsHz, look, nullDirs, { loading: this.loading });
   }
 
   setLook(azimuthDeg: number, offNadirDeg: number = this.offNadirDeg): void {
@@ -84,6 +86,19 @@ export class FreqDomainBeam implements LiveBeam {
     this.azimuthDeg = azimuthDeg;
     this.offNadirDeg = offNadirDeg;
     this.recompute();
+  }
+
+  /** Set the null bearings (array-relative deg); recomputes the weights only when the set changes. */
+  setNulls(azimuthsDeg: readonly number[]): void {
+    const next = [...azimuthsDeg];
+    if (next.length === this.nullsDeg.length && next.every((v, i) => v === this.nullsDeg[i])) return;
+    this.nullsDeg = next;
+    this.recompute();
+  }
+
+  /** The currently-applied null bearings (after A1's acceptableNulls capping is internal; these are requested). */
+  get activeNulls(): number[] {
+    return [...this.nullsDeg];
   }
 
   process(channels: Float32Array[]): Float32Array {

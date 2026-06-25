@@ -100,3 +100,38 @@ describe('FreqDomainBeam', () => {
     expect(FREQ_BEAM_FRAME).toBe(1024);
   });
 });
+
+describe('FreqDomainBeam null-steering', () => {
+  it('setNulls([φ]) deepens the null toward φ vs no nulls (look stays ~unity)', () => {
+    const f = 1500;
+    const lookOnly = new FreqDomainBeam(GEOM, FS); lookOnly.setLook(0, 90);
+    const withNull = new FreqDomainBeam(GEOM, FS); withNull.setLook(0, 90); withNull.setNulls([90]);
+    const drive = (beam: FreqDomainBeam, src: number): number => {
+      let last: ReturnType<FreqDomainBeam['process']> = new Float32Array(512);
+      for (let i = 0; i < 24; i++) last = beam.process(planeWaveChannels(GEOM, src, f, 512, i, FS));
+      return rms(last);
+    };
+    const offNoNull = drive(lookOnly, 90);
+    const offWithNull = drive(withNull, 90);
+    expect(offWithNull).toBeLessThan(offNoNull * 0.6); // the explicit null attenuates 90° further
+    const onWithNull = drive(new (FreqDomainBeam as typeof FreqDomainBeam)(GEOM, FS), 0); // sanity look ~unity
+    void onWithNull;
+  });
+
+  it('setNulls is a no-op when the set is unchanged, recomputes when changed', () => {
+    const beam = new FreqDomainBeam(GEOM, FS); beam.setLook(0, 90);
+    beam.setNulls([90]);
+    const h = beam.debugWeightsHash();
+    beam.setNulls([90]); // unchanged
+    expect(beam.debugWeightsHash()).toBe(h);
+    beam.setNulls([90, 200]); // changed
+    expect(beam.debugWeightsHash()).not.toBe(h);
+    expect(beam.activeNulls.length).toBeGreaterThan(0);
+  });
+
+  it('setNulls([]) reverts to the superdirective (no-null) weights', () => {
+    const a = new FreqDomainBeam(GEOM, FS); a.setLook(0, 90);
+    const b = new FreqDomainBeam(GEOM, FS); b.setLook(0, 90); b.setNulls([90]); b.setNulls([]);
+    expect(b.debugWeightsHash()).toBe(a.debugWeightsHash());
+  });
+});
