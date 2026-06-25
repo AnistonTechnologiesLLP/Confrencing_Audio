@@ -2,6 +2,7 @@ import type { ArrayGeometry } from '../beamformer/geometry.js';
 import type { SystemConfig } from '../model/index.js';
 import type { DetectOptions } from './doa.js';
 import type { PeqBand } from '../model/dsp-blocks.js';
+import type { Dfn3Session } from './dfn3-cleaner.js';
 
 /** A capture device discovered by an adapter (selected by NAME, never index). */
 export interface CaptureDevice {
@@ -102,13 +103,19 @@ export interface VoiceGateConfig {
 
 /** Opt-in post-beam noise suppression config. */
 export interface CleaningConfig {
-  engine?: 'off' | 'gate' | 'omlsa' | 'wiener';
-  /** 0..1 → the denoiser `amount` (gentler at lower values). */
+  engine?: 'off' | 'gate' | 'omlsa' | 'wiener' | 'dfn3';
+  /** 0..1 → the denoiser `amount` (gentler at lower values); for `dfn3` it is the dry/wet `mix`. */
   strength?: number;
   /** Wrap the cleaner in the level-preserving makeup. */
   preserveLevel?: boolean;
   /** Opt-in dereverb stage; runs BEFORE the denoiser. */
   dereverb?: { t60?: number; beta?: number; gminDb?: number; earlyMs?: number };
+  /**
+   * Required for `engine: 'dfn3'` — the host-provided ONNX inference session (the node host wires
+   * `onnxruntime` + the model; `src/live/` stays browser-safe). If absent when `dfn3` is requested, the
+   * engine falls back to the `gate` denoiser.
+   */
+  dfn3Session?: Dfn3Session;
 }
 
 /** Opt-in null-steering config for the frequency-domain beam. */

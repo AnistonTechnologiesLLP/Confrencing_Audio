@@ -68,3 +68,9 @@ export {
 } from './triangulation.js';
 export { KitSelector, DEFAULT_SWITCH_MARGIN, DEFAULT_KIT_HOLD_SECONDS, DEFAULT_SPEECH_THRESHOLD, type SelectionState, type KitSelectorOptions } from './kit-selector.js';
 export { MultiArrayCombiner, crossfadeGains, DEFAULT_CROSSFADE_BLOCKS, type KitBlock, type CombinedOutput, type MultiArrayCombinerOptions } from './multi-array-combiner.js';
+// Phase C — DeepFilterNet3 via ONNX
+export { StreamingResampler, type ResamplerOptions } from './resampler.js';
+export {
+  Dfn3Cleaner, DFN3_SR, DFN3_HOP, DFN3_STATE_LEN, DFN3_LOOKAHEAD, DEFAULT_ATTEN_LIM_DB, DEFAULT_DFN3_MIX,
+  type Dfn3Session, type Dfn3Options,
+} from './dfn3-cleaner.js';
