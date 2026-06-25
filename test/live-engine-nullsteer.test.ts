@@ -32,4 +32,15 @@ describe('LiveEngine null-steering', () => {
     expect(outs.length).toBeGreaterThan(0);
     for (const o of outs) expect('activeNulls' in o).toBe(false);
   });
+
+  it('null at the source azimuth meaningfully suppresses output (engine-level suppression proof)', async () => {
+    // Source is at 90°; look is at 0°. An exclusion null at 90° should deeply suppress the off-axis source.
+    // Measured: noNull last-block rmsDb ≈ -15.1, null last-block rmsDb ≈ -80.9 → delta ≈ -65.8 dB.
+    const noNullOuts = await run({ beam: 'freqDomain' });
+    const nullOuts = await run({ beam: 'freqDomain', nulls: { exclusionDeg: [90] } });
+    const noNullRmsDb = noNullOuts.at(-1)!.rmsDb;
+    const nullRmsDb = nullOuts.at(-1)!.rmsDb;
+    // Assert null run is at least 6 dB quieter (measured delta is ~65 dB, so this is very conservative but unambiguous).
+    expect(nullRmsDb).toBeLessThan(noNullRmsDb - 6);
+  });
 });

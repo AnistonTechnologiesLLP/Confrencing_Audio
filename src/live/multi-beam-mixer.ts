@@ -58,7 +58,7 @@ export class MultiBeamMixer {
       }),
     );
     this.scorers = Array.from({ length: this.n }, () =>
-      new SpeechPresenceScorer(opts.hopSeconds !== undefined ? { hopSeconds: opts.hopSeconds } : {}),
+      new SpeechPresenceScorer({ hopSeconds: opts.hopSeconds ?? 0.0116 }),
     );
     this.live = new Array<boolean>(this.n).fill(false);
   }

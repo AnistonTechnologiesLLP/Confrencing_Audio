@@ -128,6 +128,8 @@ export interface MultiBeamConfig {
   nBeams?: number;
   holdSeconds?: number;
   matchRadiusDeg?: number;
+  /** Run detect every K covariance hops (default 11 ≈ 8 Hz at 44.1 kHz). Same semantics as AutoSteerConfig.detectionHops. */
+  detectionHops?: number;
 }
 
 /** Engine configuration. */

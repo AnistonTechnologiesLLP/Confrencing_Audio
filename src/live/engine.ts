@@ -85,12 +85,17 @@ export class LiveEngine {
       });
       this.freqBeam.setNulls(composed);
     }
-    // --- Phase 2: optional auto-steer ---
+    // --- Phase 2: optional auto-steer / multi-beam DOA cycle ---
     const as = config.autoSteer;
+    const mb0 = config.multiBeam;
+    if ((as && as.mode !== 'manual') || mb0 !== undefined) {
+      // Build the covariance accumulator whenever auto-steer OR multi-beam needs DOA.
+      this.cov = new StreamingCovarianceAccumulator({ channels: config.geom.nChannels, sampleRate: config.sampleRate ?? 44100 });
+      this.detectionHops = as?.detectionHops ?? mb0?.detectionHops ?? 11;
+      this.doaOpts = as?.doa ?? {};
+    }
     if (as && as.mode !== 'manual') {
       this._mode = as.mode;
-      this.cov = new StreamingCovarianceAccumulator({ channels: config.geom.nChannels, sampleRate: config.sampleRate ?? 44100 });
-      this.detectionHops = as.detectionHops ?? 11;
       // Resolve the seat azimuth once for lock-seat; fall back to follow if unresolved.
       let mode: 'follow' | 'lockSeat' = as.mode;
       let lockAz: number | undefined;
@@ -110,7 +115,6 @@ export class LiveEngine {
         ...(as.holdHops !== undefined ? { holdHops: as.holdHops } : {}),
       };
       this.autosteer = new AutoSteerController(opts);
-      this.doaOpts = as.doa ?? {};
     }
     // --- Phase 3a/3b: optional post-beam cleaning chain (dereverb → denoise) ---
     const cc: CleaningConfig | undefined = config.cleaning;
@@ -247,7 +251,8 @@ export class LiveEngine {
         if (this.voiceGate) mono = this.voiceGate.process(mono);
         this.meter.update(mono);
         // Phase 2: feed covariance + run DOA/steer on the configured hop cadence.
-        if (this.cov && this.autosteer) {
+        // Runs when EITHER auto-steer or multi-beam is configured (both need DOA).
+        if (this.cov && (this.autosteer || this.mixer)) {
           this.cov.accumulate(channels);
           if (this.cov.framesSeen - this.lastFrames >= this.detectionHops) {
             this.lastFrames = this.cov.framesSeen;
@@ -259,8 +264,10 @@ export class LiveEngine {
                 this.lastSlots = this.slotTracker.update(targets, this._tSec);
                 this.mixer.setSlots(this.lastSlots);
               }
-              const decision = this.autosteer.decide(this.lastDoa);
-              if (decision.lookAzimuthDeg !== null) this.setLook(decision.lookAzimuthDeg);
+              if (this.autosteer) {
+                const decision = this.autosteer.decide(this.lastDoa);
+                if (decision.lookAzimuthDeg !== null) this.setLook(decision.lookAzimuthDeg);
+              }
               // Refine nulls with detected interferers (auto-null path).
               const nc = this.config.nulls;
               if (nc && this.freqBeam) {

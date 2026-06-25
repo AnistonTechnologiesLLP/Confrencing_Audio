@@ -114,7 +114,8 @@ export class FreqDomainBeam implements LiveBeam {
   }
 
   process(channels: Float32Array[]): Float32Array {
-    const n = channels[0]!.length;
+    const n = channels[0]?.length ?? 0;
+    if (n === 0) return new Float32Array(0);
     const F = this.F, H = this.H, M = this.M, nb = this.nb;
 
     // grow input FIFO if needed, then copy this block in at offset `fill`

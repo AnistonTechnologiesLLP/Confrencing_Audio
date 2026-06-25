@@ -63,4 +63,33 @@ describe('BeamSlotTracker', () => {
     expect(snapTargets([{ azimuthDeg: 45, salienceDb: 6 }])).toEqual([{ azimuthDeg: 45, seatId: null, salienceDb: 6 }]);
     expect(DEFAULT_N_BEAMS).toBe(3);
   });
+
+  it('steal-the-stalest: a louder new talker evicts the stalest slot when all slots are busy', () => {
+    const tr = new BeamSlotTracker({ nSlots: 2, matchRadiusDeg: 5 });
+    // Fill both slots at t=0
+    tr.update([tgt(10, 5), tgt(60, 5)], 0);
+    // Advance one slot to t=0.5 (fresher) by presenting only the 60° talker
+    tr.update([tgt(60, 5)], 0.5);
+    // Now both are occupied; 10° was last seen at t=0 (stalest), 60° at t=0.5 (freshest).
+    // A new louder talker at 200° should steal the stalest slot (10°).
+    const s = tr.update([tgt(60, 5), tgt(200, 9)], 1.0);
+    const azimuths = s.filter((x) => x.active).map((x) => x.azimuthDeg).sort((a, b) => a! - b!);
+    // 60° kept (fresher), 200° took the evicted slot
+    expect(azimuths).toContain(60);
+    expect(azimuths).toContain(200);
+    expect(azimuths).not.toContain(10);
+  });
+
+  it('two-source persistence: two slots track two talkers and stay unswapped across ticks', () => {
+    const tr = new BeamSlotTracker({ nSlots: 2, matchRadiusDeg: 25 });
+    // Assign A=10° and B=120° at t=0
+    const s0 = tr.update([tgt(10, 5), tgt(120, 5)], 0);
+    const slotA = s0.find((x) => x.azimuthDeg === 10)!.index;
+    const slotB = s0.find((x) => x.azimuthDeg === 120)!.index;
+    // At t=0.1, present A'=15° and B'=125° — small moves, within matchRadiusDeg
+    const s1 = tr.update([tgt(15, 5), tgt(125, 5)], 0.1);
+    // Each talker should stay in its original slot (not swapped)
+    expect(s1[slotA]!.azimuthDeg).toBeCloseTo(15, 0);
+    expect(s1[slotB]!.azimuthDeg).toBeCloseTo(125, 0);
+  });
 });

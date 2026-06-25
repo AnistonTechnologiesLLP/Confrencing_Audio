@@ -24,6 +24,13 @@ describe('nomAutomix', () => {
     const mixed = nomAutomix([1, 1], [m, m]); // Σgm = [2,2]; denom = max(1, √2); 2/√2 = √2 ≈ 1.414
     expect(mixed[0]!).toBeCloseTo(Math.SQRT2, 5);
   });
+  it('sub-unity gate does NOT amplify — max(1, √Σg) floor keeps output ≤ input', () => {
+    // gate=0.5, mono=[1,1] → denom = max(1, sqrt(0.5)) = max(1, 0.707) = 1 → mixed = 0.5·1/1 = 0.5
+    // (NOT 1/√0.5 ≈ 1.414, which would be amplification)
+    const mixed = nomAutomix([0.5], [Float32Array.of(1, 1)]);
+    expect(mixed[0]!).toBeCloseTo(0.5, 5);
+    expect(mixed[1]!).toBeCloseTo(0.5, 5);
+  });
 });
 
 describe('MultiBeamMixer', () => {
@@ -46,6 +53,20 @@ describe('MultiBeamMixer', () => {
     for (let i = 1; i < 30; i++) r = mixer.processBlock(planeWaveChannels(GEOM, 0, 1500, 512, i, FS));
     expect(r.gates[1]).toBe(0);
   });
+  it('beam 0 at look-direction is louder than beam 1 off-axis (differential spatial gain)', () => {
+    // At 800 Hz the superdirective beam is strongly directional.
+    // Measured: beam aimed at 0° on a 0° source ≈ 0.711 RMS; beam aimed at 120° ≈ 0.109 RMS → ratio ≈ 0.153.
+    const mixer = new MultiBeamMixer(GEOM, FS, { nBeams: 2 });
+    mixer.setSlots([slot(0, 0), slot(1, 120)]);
+    let r = mixer.processBlock(planeWaveChannels(GEOM, 0, 800, 512, 0, FS));
+    for (let i = 1; i < 24; i++) r = mixer.processBlock(planeWaveChannels(GEOM, 0, 800, 512, i, FS));
+    function rms(x: Float32Array): number { let s = 0; for (const v of x) s += v * v; return Math.sqrt(s / Math.max(1, x.length)); }
+    const beam0Rms = rms(r.monos[0]!);
+    const beam1Rms = rms(r.monos[1]!);
+    // Beam 0 (aimed at 0°) must be clearly louder than beam 1 (aimed at 120°) for a 0° source.
+    expect(beam0Rms).toBeGreaterThan(beam1Rms * 2.0); // measured ratio ~6.5× at 800 Hz
+  });
+
   it('reset() clears the beams + scorers (re-feeding reproduces a fresh run)', () => {
     const mixer = new MultiBeamMixer(GEOM, FS, { nBeams: 2 });
     mixer.setSlots([slot(0, 0), slot(1, 90)]);

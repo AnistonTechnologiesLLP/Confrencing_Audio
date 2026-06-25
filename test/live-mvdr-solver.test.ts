@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeBeamWeights, acceptableNulls, DEFAULT_SUPERDIRECTIVE_LOADING } from '../src/live/mvdr-solver.js';
+import { computeBeamWeights, acceptableNulls, DEFAULT_SUPERDIRECTIVE_LOADING, azSep } from '../src/live/mvdr-solver.js';
 import { superdirectiveWeights, steeringVector } from '../src/beamformer/beamformer.js';
 import { bearingDirection } from '../src/beamformer/beamformer.js';
 import { sensibel8 } from '../src/beamformer/geometry.js';
@@ -113,8 +113,9 @@ describe('computeBeamWeights — data-adaptive MVDR (measured covariance)', () =
     const w = W[0]!;
     const lookResp = responseAt(w, look, f);
     const intResp = responseAt(w, interferer, f);
-    expect(lookResp).toBeGreaterThan(0.3);                       // still hears the look
-    expect(20 * Math.log10(intResp / lookResp + 1e-12)).toBeLessThan(-15); // measured interferer suppressed
+    // Measured: lookResp ≈ 1.0, suppression ≈ -47.5 dB. Tight-but-passing thresholds set below.
+    expect(lookResp).toBeGreaterThan(0.8);                        // near-unity at the look
+    expect(20 * Math.log10(intResp / lookResp + 1e-12)).toBeLessThan(-30); // measured suppression ≈ -47.5 dB
   });
 
   it('falls back to analytic Γ on bins outside the measured band', () => {
@@ -133,5 +134,14 @@ describe('computeBeamWeights — data-adaptive MVDR (measured covariance)', () =
       expect(W[0]![ch]!.re).toBeCloseTo(ref0[ch]!.re, 9);
       expect(W[0]![ch]!.im).toBeCloseTo(ref0[ch]!.im, 9);
     }
+  });
+});
+
+describe('azSep — wrap-aware angular separation', () => {
+  it('returns the correct shortest arc including across 0/360', () => {
+    expect(azSep(350, 10)).toBeCloseTo(20);   // 350→10 wraps through 0 = 20°
+    expect(azSep(10, 350)).toBeCloseTo(20);   // symmetric
+    expect(azSep(0, 180)).toBeCloseTo(180);   // exact half-turn
+    expect(azSep(45, 90)).toBeCloseTo(45);    // no-wrap case
   });
 });

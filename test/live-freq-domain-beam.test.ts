@@ -25,15 +25,18 @@ describe('FreqDomainBeam', () => {
   it('reconstructs an on-look source at ~unity gain (steady state)', () => {
     const beam = new FreqDomainBeam(GEOM, FS);
     const out = driveBeam(beam, 40, 40, 1500);
-    // a single capsule sees the source at unit amplitude; the superdirective beam keeps ~unity at the look
-    expect(rms(out)).toBeGreaterThan(0.2);
+    // A unit-amplitude sine has RMS ≈ 0.707; superdirective distortionless constraint keeps the look near unity.
+    // Measured: RMS ≈ 0.7075. Tight band [0.5, 1.5] proves unity, not just "non-tiny".
+    expect(rms(out)).toBeGreaterThan(0.5);
+    expect(rms(out)).toBeLessThan(1.5);
     for (const v of out) expect(Number.isFinite(v)).toBe(true);
   });
 
   it('attenuates an off-look source vs an on-look source', () => {
     const onLook = rms(driveBeam(new FreqDomainBeam(GEOM, FS), 0, 0, 2000));
     const offLook = rms(driveBeam(new FreqDomainBeam(GEOM, FS), 0, 120, 2000));
-    expect(offLook).toBeLessThan(onLook * 0.7); // off-axis is attenuated
+    // Measured: off/on ratio ≈ 0.197 at 2000 Hz / 120°. Threshold 0.4 proves real directivity (not a 3 dB nudge).
+    expect(offLook).toBeLessThan(onLook * 0.4);
   });
 
   it('rejects a LOW-frequency off-axis source far better than delay-sum (the superdirective advantage)', () => {
@@ -49,28 +52,34 @@ describe('FreqDomainBeam', () => {
     expect(fdRej).toBeLessThan(dsRej * 0.5); // and far better than delay-sum at this frequency
   });
 
-  it('adapts arbitrary block sizes (FIFO) — same total output as fixed blocks', () => {
-    // Feed the same signal in irregular block sizes vs one stream; the produced samples must match.
+  it('adapts arbitrary block sizes (FIFO) — same total output as fixed blocks; deterministic reset', () => {
+    // Part 1: FIFO emits exactly as many samples as it is fed (count check).
     const beamA = new FreqDomainBeam(GEOM, FS); beamA.setLook(0, 90);
-    const beamB = new FreqDomainBeam(GEOM, FS); beamB.setLook(0, 90);
     const outA: number[] = [];
-    const outB: number[] = [];
-    let phase = 0;
-    const feed = (beam: FreqDomainBeam, sink: number[], sizes: number[]) => {
-      for (const sz of sizes) {
-        const ch = planeWaveChannels(GEOM, 0, 1000, sz, Math.floor(phase / sz), FS);
-        const o = beam.process(ch);
-        for (const v of o) sink.push(v);
-      }
-    };
-    // NOTE: planeWaveChannels is phase-continuous via block index; to compare fairly, drive both with the
-    // SAME per-sample source. Simpler: assert each beam alone is internally consistent (no NaN, bounded) and
-    // that total emitted sample count equals total fed sample count.
     let fed = 0;
     for (const sz of [200, 512, 300, 1000]) { fed += sz; const o = beamA.process(planeWaveChannels(GEOM, 0, 1000, sz, 0, FS)); for (const v of o) outA.push(v); }
-    expect(outA.length).toBe(fed);              // FIFO emits exactly as many samples as it is fed
+    expect(outA.length).toBe(fed);
     expect(outA.every((v) => Number.isFinite(v))).toBe(true);
-    void outB; void beamB; void feed;
+
+    // Part 2: FIFO content determinism — re-feeding the SAME irregular block pattern after a reset
+    // must reproduce byte-identical output (proves FIFO state, not just count).
+    const beam = new FreqDomainBeam(GEOM, FS); beam.setLook(0, 90);
+    const sizes = [128, 512, 300, 256, 512];
+    const run1: number[] = [];
+    for (let bi = 0; bi < sizes.length; bi++) {
+      const sz = sizes[bi]!;
+      const o = beam.process(planeWaveChannels(GEOM, 0, 1000, sz, bi, FS));
+      for (const v of o) run1.push(v);
+    }
+    beam.reset();
+    const run2: number[] = [];
+    for (let bi = 0; bi < sizes.length; bi++) {
+      const sz = sizes[bi]!;
+      const o = beam.process(planeWaveChannels(GEOM, 0, 1000, sz, bi, FS));
+      for (const v of o) run2.push(v);
+    }
+    expect(run1.length).toBe(run2.length);
+    for (let i = 0; i < run1.length; i++) expect(run2[i]).toBeCloseTo(run1[i]!, 5);
   });
 
   it('re-steers when the look changes and is a no-op when unchanged', () => {
@@ -106,6 +115,7 @@ describe('FreqDomainBeam null-steering', () => {
     const f = 1500;
     const lookOnly = new FreqDomainBeam(GEOM, FS); lookOnly.setLook(0, 90);
     const withNull = new FreqDomainBeam(GEOM, FS); withNull.setLook(0, 90); withNull.setNulls([90]);
+    const withNull2 = new FreqDomainBeam(GEOM, FS); withNull2.setLook(0, 90); withNull2.setNulls([90]);
     const drive = (beam: FreqDomainBeam, src: number): number => {
       let last: ReturnType<FreqDomainBeam['process']> = new Float32Array(512);
       for (let i = 0; i < 24; i++) last = beam.process(planeWaveChannels(GEOM, src, f, 512, i, FS));
@@ -113,9 +123,13 @@ describe('FreqDomainBeam null-steering', () => {
     };
     const offNoNull = drive(lookOnly, 90);
     const offWithNull = drive(withNull, 90);
-    expect(offWithNull).toBeLessThan(offNoNull * 0.6); // the explicit null attenuates 90° further
-    const onWithNull = drive(new (FreqDomainBeam as typeof FreqDomainBeam)(GEOM, FS), 0); // sanity look ~unity
-    void onWithNull;
+    // Measured: offNoNull≈0.176, offWithNull≈8.85e-5, ratio≈5.0e-4. Task-2 measured null at −66 dB.
+    // Threshold 0.2 (i.e. < 0.2 × offNoNull) is tight-but-passing and proves a genuinely deep null.
+    expect(offWithNull).toBeLessThan(offNoNull * 0.2);
+    // LCMV distortionless constraint: the look-direction response must be preserved with the null active.
+    // Measured: onWithNull ≈ 0.7076. Assert RMS ≥ 0.5 proves unity, not just "alive".
+    const onWithNull = drive(withNull2, 0);
+    expect(onWithNull).toBeGreaterThan(0.5);
   });
 
   it('setNulls is a no-op when the set is unchanged, recomputes when changed', () => {
