@@ -25,7 +25,8 @@ describe('composeNulls', () => {
 
   it('fills detected, then exclusions, then seats (precedence) and caps at budget', () => {
     const out = composeNulls(0, [60], 3, { exclusion: [120], seats: [180, 240] });
-    expect(out).toEqual([60, 120, 180]); // detected, exclusion, then nearest seat; capped at 3
+    // detected, exclusion, then the NEAREST seat (240° is sep 120 from 0° vs 180° at sep 180); capped at 3
+    expect(out).toEqual([60, 120, 240]);
   });
 
   it('orders seats nearest-to-look first and respects seatNullMaxCount', () => {

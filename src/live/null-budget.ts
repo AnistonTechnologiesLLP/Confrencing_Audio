@@ -51,13 +51,10 @@ export function composeNulls(
   let seat = (opts.seats ?? []).filter((s) => azSep(s, targetAzDeg) >= minSep);
   seat = seat.filter((s) => !nearAny(s, det, mergeSep) && !nearAny(s, excl, mergeSep));
   seat = dedupeAz(seat, mergeSep);
-  // When seatNullMaxCount is explicitly set: sort nearest-first (prioritize closer seats).
-  // When not set: sort farthest-first (be conservative, avoid nulling nearer occupied seats).
+  // Always nearest-to-look first (Python `seat.sort(key=lambda s: _az_sep(s, target_az))`), then cap.
+  seat = seat.slice().sort((a, b) => azSep(a, targetAzDeg) - azSep(b, targetAzDeg));
   if (opts.seatNullMaxCount !== undefined && opts.seatNullMaxCount !== null) {
-    seat = seat.slice().sort((a, b) => azSep(a, targetAzDeg) - azSep(b, targetAzDeg)); // nearest-to-look first
     seat = seat.slice(0, Math.max(0, opts.seatNullMaxCount));
-  } else {
-    seat = seat.slice().sort((a, b) => azSep(b, targetAzDeg) - azSep(a, targetAzDeg)); // farthest-to-look first
   }
 
   const final = det.slice(0, budget);
