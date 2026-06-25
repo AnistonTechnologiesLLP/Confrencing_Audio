@@ -35,7 +35,7 @@ describe('Dfn3Cleaner', () => {
 
   it('emits same-length blocks and, once primed, an identity session reconstructs the signal (~unity)', () => {
     const c = new Dfn3Cleaner(FS, { session: gainSession(1) });
-    let last = new Float32Array(512);
+    let last: Float32Array = new Float32Array(512);
     for (let i = 0; i < 40; i++) {
       const blk = new Float32Array(512);
       for (let k = 0; k < 512; k++) blk[k] = 0.4 * Math.sin((2 * Math.PI * 1000 * (i * 512 + k)) / FS);
@@ -50,7 +50,7 @@ describe('Dfn3Cleaner', () => {
 
   it('a gain session scales the cleaned output (once primed)', () => {
     const c = new Dfn3Cleaner(FS, { session: gainSession(0.5) });
-    let last = new Float32Array(512);
+    let last: Float32Array = new Float32Array(512);
     for (let i = 0; i < 50; i++) {
       const blk = new Float32Array(512);
       for (let k = 0; k < 512; k++) blk[k] = 0.4 * Math.sin((2 * Math.PI * 1000 * (i * 512 + k)) / FS);
@@ -85,8 +85,8 @@ describe('Dfn3Cleaner', () => {
       },
     };
     const c = new Dfn3Cleaner(FS, { session });
-    let out = new Float32Array(0);
-    let raw = new Float32Array(0);
+    let out: Float32Array = new Float32Array(0);
+    let raw: Float32Array = new Float32Array(0);
     for (let i = 0; i < 10; i++) {
       raw = sine(1000, 512);
       out = c.process(raw, false);

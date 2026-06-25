@@ -51,10 +51,10 @@ export class Dfn3Cleaner implements Cleaner {
   private readonly mix: number;
   private to48: StreamingResampler | null = null;
   private from48: StreamingResampler | null = null;
-  private states = new Float32Array(DFN3_STATE_LEN);
-  private in48 = new Float32Array(0); // accumulated 48 kHz input awaiting full frames
-  private dry48 = new Float32Array(DFN3_LOOKAHEAD); // 48 kHz input history to lag-align the dry/wet mix
-  private outq = new Float32Array(0); // cleaned output at the engine rate, FIFO
+  private states: Float32Array = new Float32Array(DFN3_STATE_LEN);
+  private in48: Float32Array = new Float32Array(0); // accumulated 48 kHz input awaiting full frames
+  private dry48: Float32Array = new Float32Array(DFN3_LOOKAHEAD); // 48 kHz input history to lag-align the dry/wet mix
+  private outq: Float32Array = new Float32Array(0); // cleaned output at the engine rate, FIFO
   private primed = false;
   /** Last process() error (passthrough fallback fired), for telemetry. */
   error: string | null = null;
