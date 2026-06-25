@@ -138,6 +138,23 @@ Key structural facts that span files:
   bulk-delay estimation — the ~93 ms tap span absorbs the latency). Opt-in `LiveConfig.aec` (default off =
   Phase-3b unchanged); `BeamOutput.aec` surfaces ERLE. Not a `Cleaner` (needs a reference arg). AGC/PEQ = 3d.
 
+- **Loudness AGC (Phase 3d-1, `src/live/agc.ts`).** A `TargetLoudnessAgc` normalizes the cleaned mono toward a
+  target RMS with a slewed gain (reuses `ExponentialTracker`), silence-held and peak-limited; runs after the
+  cleaner, before the meter. Opt-in `LiveConfig.agc` (default off = Phase-3c unchanged); `BeamOutput.agc`
+  surfaces `gainLinear`.
+
+- **Tone & gate (Phase 3d-2 / 3d-3, `src/live/{peq,voice-gate,speech-presence}.ts`).** The live cleaning chain
+  is `beam → [AEC] → dereverb → denoise → [PEQ] → [AGC] → [band-limit] → [voice-gate] → meter`. **PEQ**
+  (`StreamingPeq`) is a zero-dep cascade of up to 4 RBJ biquads (the shared `PeqBand` model) — the Python's
+  scipy `sosfilt` is replaced by a hand-rolled DF-II-transposed recursion with carried Float64 state; runs
+  before the AGC; same-object pass-through when off. **Band-limit** (`LiveConfig.bandLimit`) is **not a new
+  module** — it reuses `StreamingPeq` (Butterworth HP+LP) and runs **after** the AGC (Python-chain order). The
+  **voice-gate** (`StreamingVoiceGate`) ducks non-speech toward a shallow −15 dB floor (fast attack / slow
+  release, onset-safe) driven by the level-invariant syllabic-modulation `SpeechPresenceScorer` (three one-pole
+  EMAs, pure); runs **last**; `BeamOutput.voiceGate` surfaces `{ open, reductionDb, score }`. All opt-in,
+  default-off byte-identical, zero-dep. (NB: the Python's literal "band-limit" is the beam anti-alias FIR — a
+  beamformer concern — not a chain stage; this band-limit is a speech-band trim.)
+
 ## Conventions
 
 - **Relative imports carry a `.js` extension** even though sources are `.ts` (ESM resolution). Match this —

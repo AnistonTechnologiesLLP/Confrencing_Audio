@@ -2,7 +2,11 @@
  * Wires a CaptureAdapter to the live beamformer + meter, emitting a BeamOutput
  * per captured block. Pure orchestration (no node:* / no audio I/O of its own).
  */
-import type { CaptureAdapter, LiveConfig, BeamOutput, AutoSteerMode, CleaningConfig, AecConfig } from './types.js';
+import type { CaptureAdapter, LiveConfig, BeamOutput, AutoSteerMode, CleaningConfig, AecConfig, AgcConfig } from './types.js';
+import { StreamingVoiceGate } from './voice-gate.js';
+import type { PeqBand } from '../model/dsp-blocks.js';
+import { TargetLoudnessAgc } from './agc.js';
+import { StreamingPeq } from './peq.js';
 import { StreamingAec } from './aec.js';
 import { ReferenceRing } from './reference-ring.js';
 import { StreamingDelaySumBeam } from './beam.js';
@@ -39,6 +43,10 @@ export class LiveEngine {
   private refRing: ReferenceRing | null = null;
   private refScratch: Float32Array = new Float32Array(0);
   private aecActive = false;
+  private agc: TargetLoudnessAgc | null = null;
+  private peq: StreamingPeq | null = null;
+  private bandLimit: StreamingPeq | null = null;
+  private voiceGate: StreamingVoiceGate | null = null;
 
   constructor(adapter: CaptureAdapter, config: LiveConfig) {
     this.adapter = adapter;
@@ -111,6 +119,26 @@ export class LiveEngine {
       this.refRing = new ReferenceRing(sr, ac.refSeconds ?? 2);
       this.aecActive = true;
     }
+    if (config.bandLimit) {
+      const bands: PeqBand[] = [];
+      if (config.bandLimit.highpassHz !== undefined) {
+        bands.push({ type: 'highpass', freqHz: config.bandLimit.highpassHz, gainDb: 0, q: 0.7071067811865476 });
+      }
+      if (config.bandLimit.lowpassHz !== undefined) {
+        bands.push({ type: 'lowpass', freqHz: config.bandLimit.lowpassHz, gainDb: 0, q: 0.7071067811865476 });
+      }
+      if (bands.length > 0) this.bandLimit = new StreamingPeq(config.sampleRate ?? 44100, bands);
+    }
+    if (config.peq && config.peq.bands.length > 0) {
+      this.peq = new StreamingPeq(config.sampleRate ?? 44100, config.peq.bands);
+    }
+    const agcCfg: AgcConfig | undefined = config.agc;
+    if (agcCfg !== undefined) {
+      this.agc = new TargetLoudnessAgc(config.sampleRate ?? 44100, agcCfg);
+    }
+    if (config.voiceGate) {
+      this.voiceGate = new StreamingVoiceGate(config.sampleRate ?? 44100, config.voiceGate);
+    }
   }
 
   get azimuthDeg(): number {
@@ -154,6 +182,15 @@ export class LiveEngine {
           const noiseGate = this.lastDoa ? !this.lastDoa.active : false; // VAD from the PREVIOUS DOA cycle (up to ~detectionHops blocks stale) — fine: the min-stat floor is VAD-independent and the makeup tracks slowly
           mono = this.cleaner.process(mono, noiseGate);
         }
+        // Phase 3d-2: parametric EQ — tone-shape the clean signal before the AGC levels it.
+        if (this.peq) mono = this.peq.process(mono);
+        // Phase 3d-1: target-loudness AGC on the cleaned mono (before the meter).
+        if (this.agc) mono = this.agc.process(mono, false);
+        // Phase 3d-3: speech band-limit (reuses the PEQ) — trim out-of-band energy AFTER the AGC levels
+        // (matches the Python chain PEQ → AGC → band-limit → voice-gate).
+        if (this.bandLimit) mono = this.bandLimit.process(mono);
+        // Phase 3d-3: voice-only output gate — duck non-speech (runs LAST, after the AGC).
+        if (this.voiceGate) mono = this.voiceGate.process(mono);
         this.meter.update(mono);
         // Phase 2: feed covariance + run DOA/steer on the configured hop cadence.
         if (this.cov && this.autosteer) {
@@ -187,6 +224,8 @@ export class LiveEngine {
             : {}),
           ...(this.cleaningInfo !== null ? { cleaning: this.cleaningInfo } : {}),
           ...(this.aecActive && this.aec ? { aec: { erleDb: this.aec.erleDb, farendActive: this.aec.farendActive } } : {}),
+          ...(this.agc ? { agc: { gainLinear: this.agc.gainLinear } } : {}),
+          ...(this.voiceGate ? { voiceGate: { open: this.voiceGate.gateOpen, reductionDb: this.voiceGate.reductionDb, score: this.voiceGate.score } } : {}),
         });
       },
     });

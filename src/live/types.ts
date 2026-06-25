@@ -1,6 +1,7 @@
 import type { ArrayGeometry } from '../beamformer/geometry.js';
 import type { SystemConfig } from '../model/index.js';
 import type { DetectOptions } from './doa.js';
+import type { PeqBand } from '../model/dsp-blocks.js';
 
 /** A capture device discovered by an adapter (selected by NAME, never index). */
 export interface CaptureDevice {
@@ -55,6 +56,8 @@ export interface BeamOutput {
   lockedTarget?: { azimuthDeg: number; seatId?: string } | null;
   cleaning?: { engine: string; preserved: boolean; dereverb?: boolean };
   aec?: { erleDb: number; farendActive: boolean };
+  agc?: { gainLinear: number };
+  voiceGate?: { open: boolean; reductionDb: number; score: number };
 }
 
 export interface AecConfig {
@@ -64,6 +67,33 @@ export interface AecConfig {
   refFloor?: number;
   /** Reference-ring length in seconds (default 2). */
   refSeconds?: number;
+}
+
+export interface AgcConfig {
+  targetDb: number;
+  maxGainDb?: number;
+  slewAlpha?: number;
+  silenceDb?: number;
+}
+
+/** Parametric-EQ config: up to {@link PEQ_MAX_BANDS} RBJ bands (the shared PEQ model). */
+export interface PeqConfig {
+  bands: PeqBand[];
+}
+
+/** Opt-in speech band-limit: a gentle HP and/or LP (reuses the PEQ biquads). At least one cutoff to be active. */
+export interface BandLimitConfig {
+  highpassHz?: number;
+  lowpassHz?: number;
+}
+
+/** Opt-in voice-only output gate config. */
+export interface VoiceGateConfig {
+  threshold?: number;
+  floorDb?: number;
+  attackMs?: number;
+  releaseMs?: number;
+  modRef?: number;
 }
 
 /** Opt-in post-beam noise suppression config. */
@@ -88,4 +118,8 @@ export interface LiveConfig {
   autoSteer?: AutoSteerConfig;
   cleaning?: CleaningConfig;
   aec?: AecConfig;
+  agc?: AgcConfig;
+  peq?: PeqConfig;
+  bandLimit?: BandLimitConfig;
+  voiceGate?: VoiceGateConfig;
 }
