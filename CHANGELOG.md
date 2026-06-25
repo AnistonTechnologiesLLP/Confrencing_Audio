@@ -11,6 +11,15 @@ The JSON **config schema** is versioned independently via `CONFIG_VERSION`
 ## [Unreleased]
 
 ### Added
+- **Browser / Web-Audio capture adapter (Phase D)** — a `CaptureAdapter` over `getUserMedia` + `AudioWorklet`
+  so the live console can run **without the Node host**. `WebAudioCaptureAdapter` enumerates audio inputs,
+  captures via an AudioWorklet (shipped as a `WEB_AUDIO_PROCESSOR_SOURCE` string the host blobs into a module
+  URL), and feeds `onBlock`. **Honest, load-bearing limit:** a browser **cannot** capture the 8 discrete POLARIS
+  capsules — `getUserMedia` downmixes a multichannel USB device to **stereo** before Web-Audio sees it, so this
+  adapter delivers **at most 2 channels** (a meter / single-channel-cleaning demo, or feeding the synthetic
+  visualizer from a real but downmixed input) and **never fabricates 8 channels**. For real array beamforming,
+  use the Node host (`./live-node` + `naudiodon2`). The pure device mapper + availability + unavailable-path are
+  unit-tested; the getUserMedia/worklet flow is verified in a real browser. Zero new dependencies.
 - **DeepFilterNet3 cleaning + a streaming resampler (Phase C)** — an opt-in neural denoiser for the live
   cleaning chain, with the core kept **zero-dependency**:
   - **`resampler.ts`** — a from-scratch **phase-coherent streaming polyphase resampler** (Kaiser-windowed-sinc
