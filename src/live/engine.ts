@@ -23,6 +23,7 @@ import { seatAzimuthForArray } from '../seat-mapper/seat-mapper.js';
 import { StreamingSpectralProcessor } from './spectral-processor.js';
 import { OmlsaProcessor } from './omlsa.js';
 import { LevelPreservingCleaner, type Cleaner } from './level-preserving-cleaner.js';
+import { Dfn3Cleaner } from './dfn3-cleaner.js';
 import { StreamingDereverb } from './dereverb.js';
 import { ChainedCleaner } from './cleaner-chain.js';
 
@@ -124,17 +125,31 @@ export class LiveEngine {
       const strength = cc.strength ?? 1;
       const stages: Cleaner[] = [];
       if (cc.dereverb !== undefined) stages.push(new StreamingDereverb(sr, cc.dereverb));
+      let effectiveEngine = engine;
       if (engine !== 'off') {
-        stages.push(
-          engine === 'gate'
-            ? new StreamingSpectralProcessor(sr, { amount: strength })
-            : new OmlsaProcessor(sr, { amount: strength, mode: engine }),
-        );
+        let denoiser: Cleaner;
+        if (engine === 'dfn3') {
+          if (cc.dfn3Session !== undefined) {
+            denoiser = new Dfn3Cleaner(sr, {
+              session: cc.dfn3Session,
+              ...(cc.strength !== undefined ? { mix: cc.strength } : {}),
+            });
+          } else {
+            // no ONNX session (onnxruntime/model unavailable) → fall back to the gate denoiser
+            denoiser = new StreamingSpectralProcessor(sr, { amount: strength });
+            effectiveEngine = 'gate';
+          }
+        } else if (engine === 'gate') {
+          denoiser = new StreamingSpectralProcessor(sr, { amount: strength });
+        } else {
+          denoiser = new OmlsaProcessor(sr, { amount: strength, mode: engine });
+        }
+        stages.push(denoiser);
       }
       const inner: Cleaner = stages.length === 1 ? stages[0]! : new ChainedCleaner(stages);
       this.cleaner = cc.preserveLevel ? new LevelPreservingCleaner(inner) : inner;
       this.cleaningInfo = {
-        engine,
+        engine: effectiveEngine,
         preserved: cc.preserveLevel === true,
         ...(cc.dereverb !== undefined ? { dereverb: true } : {}),
       };

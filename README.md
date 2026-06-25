@@ -768,6 +768,37 @@ Verified faithful to the Python (`fence.py`, `multikit.py`) by an adversarial ge
 the pure layer is hardware-free and testable; the two-`LiveEngine` host wiring (two capture devices, independent
 clocks — no inter-kit sample alignment, equal-power fade by design) is a thin node-host concern, deferred.
 
+### DeepFilterNet3 cleaning (Phase C)
+
+An opt-in neural denoiser for the live cleaning chain, with the core kept **zero-dependency**.
+
+```ts
+import { Dfn3Cleaner, type Dfn3Session, StreamingResampler } from 'conferencing-audio-pipeline/live';
+
+// the host wires the ONNX session (node-only onnxruntime + the model); the cleaner stays browser-safe
+const engine = new LiveEngine(new NodeCaptureAdapter(), {
+  geom, deviceName: 'SB-POLARIS', sampleRate: 44100,
+  cleaning: { engine: 'dfn3', dfn3Session, strength: 1.0 }, // strength = dry/wet mix for dfn3
+});
+```
+
+- **`StreamingResampler(up, down)`** — a from-scratch phase-coherent streaming polyphase resampler (no scipy):
+  a Kaiser-windowed-sinc FIR with exact cumulative-integer accounting so the polyphase phase never resets (the
+  naive overlap-save resets it every block and drags a round-trip to ≈ −10 dB). Measured **44.1↔48 kHz
+  round-trip THD+N ≈ −90 dB**.
+- **`Dfn3Cleaner`** — streams the engine-rate mono through the resamplers and the 480-sample DFN3 frames
+  (carrying the model state), with an optional lag-aligned dry/wet `mix`. **Realtime-safe**: it passes the raw
+  voice through on prime / underrun / any error — never silence, never a throw. The ONNX inference is an
+  **injected `Dfn3Session`** interface, so `src/live/` stays browser-safe and the streaming plumbing is fully
+  unit-tested with a stub session.
+- **`cleaning.engine: 'dfn3'`** with a host-provided `cleaning.dfn3Session` selects it; without a session the
+  engine falls back to the `gate` denoiser (honestly reported). Default-off is byte-identical.
+
+Reviewed **faithful** to the Python `deepfilter_cleaner.py` (the polyphase was numerically reproduced to machine
+epsilon). **Honest limits:** the ONNX model is **not bundled** (multi-MB — a host/ops step, like the `naudiodon2`
+addon); `onnxruntime` is an optional peer-dependency; and the synchronous `Dfn3Session` seam needs a host
+async→sync bridge for `onnxruntime-node` (a worker thread or a sync runtime) — deferred host wiring.
+
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md) for the version history.

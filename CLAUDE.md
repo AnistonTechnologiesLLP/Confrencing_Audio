@@ -180,6 +180,18 @@ Key structural facts that span files:
   (−60 dB) when out-of-fence. Pure/testable; the two-`LiveEngine` host wiring (two adapters, clock sync) is a
   thin node concern, deferred. Triangulation + selector verified faithful to the Python by review.
 
+- **DeepFilterNet3 cleaning (Phase C, `src/live/{resampler,dfn3-cleaner}.ts`).** An opt-in neural denoiser,
+  core kept zero-dep. `resampler.ts` `StreamingResampler` is a from-scratch **phase-coherent streaming
+  polyphase resampler** (Kaiser-sinc FIR + cumulative-integer accounting so the polyphase phase never resets —
+  the documented dominant-distortion source; measured 44.1↔48 kHz round-trip THD+N ≈ −90 dB). `dfn3-cleaner.ts`
+  `Dfn3Cleaner` streams the mono through the resamplers + 480-sample DFN3 frames (carrying model state), with a
+  lag-aligned dry/wet `mix`; realtime-safe (raw passthrough on prime/underrun/error). The ONNX **session is
+  injected** (`Dfn3Session` interface) so `src/live/` stays browser-safe — tests use a stub. `engine.ts`:
+  `cleaning.engine: 'dfn3'` + a host `cleaning.dfn3Session` build it, else fall back to `gate`. Port of
+  `deepfilter_cleaner.py` — reviewed FAITHFUL (polyphase reproduced to machine epsilon). **Deferred host work:**
+  the real `onnxruntime`-backed session factory (node-only, optional peer-dep, the model is NOT bundled) +
+  bridging async `onnxruntime-node.run()` to the sync `Dfn3Session` seam (a worker thread / sync runtime).
+
 ## Conventions
 
 - **Relative imports carry a `.js` extension** even though sources are `.ts` (ESM resolution). Match this —
