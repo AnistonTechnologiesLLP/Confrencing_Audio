@@ -734,8 +734,14 @@ const engine = new LiveEngine(new NodeCaptureAdapter(), {
 Still zero-dependency (the FFT, complex solver, and biquads are hand-rolled). **Verified bit-exact against the
 Python** (`_FreqDomainBeam`, `MultiBeamMixer`) by an adversarial review. **Honest limits:** superdirective's
 advantage is at low frequency (at ~2–2.6 kHz the delay-sum mainlobe can edge ahead — physics, not a defect);
-null depth/count are bounded by the array (`M−1` nulls on a small 40 mm ring); the data-adaptive **measured-R**
-MVDR (nulling the *measured* field, needs a noise-gated covariance) and RTF-MVDR are deferred.
+null depth/count are bounded by the array (`M−1` nulls on a small 40 mm ring).
+
+- **`beam: 'mvdr'`** — data-adaptive **measured-R MVDR**. The engine runs a second **noise-gated** covariance
+  accumulator that folds R **only on VAD-silent frames** (so it learns the *room noise field* without nulling the
+  talker; cold-start doesn't train, warmup matches the Python), and feeds that measured covariance into the
+  per-bin solve via `FreqDomainBeam.setMeasured`. It nulls the actual measured interference rather than an
+  assumed-isotropic field. Default-off byte-identical; the trace-relative loading is floored so the audio-path
+  solve never goes singular. RTF-MVDR is the remaining deferred refinement.
 ### Dual-array triangulation (Phase B)
 
 A zero-dependency 2D-position layer for **two** arrays. Each array reports a bearing to the talker; crossing the
@@ -763,10 +769,14 @@ const out = combiner.process([kitBlockA, kitBlockB], tSeconds, { poses: [poseA, 
   clear winner, hold through pauses, never switch to a non-talker).
 - **`MultiArrayCombiner`** — per-kit scores → selection → equal-power cross-fade on a switch → **one** combined
   AGC; the fence drops a rejected kit from contention and ducks the output (−60 dB) when out-of-fence.
+- **`MultiArrayEngine`** — the host orchestrator: wraps **two** single-array `LiveEngine`s (one per kit), pairs
+  their per-block beamformed outputs, and feeds the combiner. It **rejects per-kit AGC at construction** (the
+  combiner owns the single combined AGC) and clamps mismatched block lengths to the shorter (never NaN). Drive it
+  with two `ManualCaptureAdapter`s in tests; two real devices + clock handling is the node host's job.
 
 Verified faithful to the Python (`fence.py`, `multikit.py`) by an adversarial geometry review. **Honest limits:**
-the pure layer is hardware-free and testable; the two-`LiveEngine` host wiring (two capture devices, independent
-clocks — no inter-kit sample alignment, equal-power fade by design) is a thin node-host concern, deferred.
+the two engines run on independent clocks — outputs are paired as they arrive (no inter-kit sample alignment; the
+equal-power fade is by design), and sustained skew between two real capture devices is the node host's concern.
 
 ### DeepFilterNet3 cleaning (Phase C)
 
@@ -793,11 +803,18 @@ const engine = new LiveEngine(new NodeCaptureAdapter(), {
   unit-tested with a stub session.
 - **`cleaning.engine: 'dfn3'`** with a host-provided `cleaning.dfn3Session` selects it; without a session the
   engine falls back to the `gate` denoiser (honestly reported). Default-off is byte-identical.
+- **`createDfn3SyncSession` (node)** — the host bridge from `conferencing-audio-pipeline/live-node`. It satisfies
+  the **synchronous** `Dfn3Session` seam with the **asynchronous** `onnxruntime-node.run()` via a **worker thread
+  + SharedArrayBuffer + Atomics**. A two-word `[reqSeq, respSeq]` **generation protocol** makes a timeout
+  recoverable — a slow worker's late response carries an old seq, so the next `run()` skips it (no stale read, no
+  permanent brick); only a worker crash is terminal. The worker loads the model eagerly at spawn and falls back
+  to identity passthrough on any error. The host passes `modelPath` and **owns `close()`**.
 
 Reviewed **faithful** to the Python `deepfilter_cleaner.py` (the polyphase was numerically reproduced to machine
-epsilon). **Honest limits:** the ONNX model is **not bundled** (multi-MB — a host/ops step, like the `naudiodon2`
-addon); `onnxruntime` is an optional peer-dependency; and the synchronous `Dfn3Session` seam needs a host
-async→sync bridge for `onnxruntime-node` (a worker thread or a sync runtime) — deferred host wiring.
+epsilon); the bridge passed an adversarial concurrency review. **Honest limits:** the ONNX model is **not
+bundled** (multi-MB — a host/ops step, like the `naudiodon2` addon); `onnxruntime` is an optional peer-dependency;
+`run()` blocks the calling thread by design (the sync seam, like the Python's `ort`), so the host should prime the
+model off the audio thread before going live. The bridge mechanism is stub-tested in CI (no real ONNX).
 
 ### Browser / Web-Audio capture (Phase D)
 

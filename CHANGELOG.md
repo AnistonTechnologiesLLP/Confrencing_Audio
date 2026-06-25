@@ -11,6 +11,24 @@ The JSON **config schema** is versioned independently via `CONFIG_VERSION`
 ## [Unreleased]
 
 ### Added
+- **Data-adaptive measured-R MVDR (`beam: 'mvdr'`, A3b)** — closes the deferred Phase-A item. A second
+  **noise-gated** `StreamingCovarianceAccumulator` (`accumulate(channels, gate)`) folds the spatial covariance
+  **only on VAD-silent frames**, so it learns the room noise field without nulling the talker (cold-start does
+  not train; warmup `16` matches the Python `_NOISE_WARMUP_FRAMES`). Its `snapshot().{rBand,band}` feeds
+  `FreqDomainBeam.setMeasured`, which overlays the measured covariance on the DOA-band bins in
+  `computeBeamWeights` (trace-relative loading **floored at `MVDR_LOADING_FLOOR`** so the audio-path solve never
+  goes singular). Default-off byte-identical; zero-dep. Adversarial DSP-math review: SHIP.
+- **Dual-array host orchestrator (`MultiArrayEngine`, Phase B)** — closes the deferred two-`LiveEngine` wiring.
+  Wraps two single-array `LiveEngine`s (one per kit), pairs their per-block beamformed outputs, and feeds the
+  `MultiArrayCombiner`. **Rejects per-kit AGC at construction** (the combiner owns the one combined AGC) and
+  clamps mismatched block lengths to the shorter (never NaN). Testable with two `ManualCaptureAdapter`s.
+- **Node DFN3 ONNX session bridge (`createDfn3SyncSession`, Phase C)** — closes the deferred async→sync host
+  wiring. Satisfies the synchronous `Dfn3Session` seam with async `onnxruntime-node.run()` via a **worker thread
+  + SharedArrayBuffer + Atomics**, using a two-word `[reqSeq, respSeq]` **generation protocol** so a timeout is
+  recoverable (a slow worker's stale response is skipped — no permanent brick, no mis-read); only a worker crash
+  is terminal. The worker (`DFN3_ONNX_WORKER_SOURCE`) eager-loads the model and falls back to identity
+  passthrough on any error; the host supplies `modelPath` and owns `close()`. Stub-tested (no real ONNX in CI);
+  adversarial concurrency review fixes folded in.
 - **Browser / Web-Audio capture adapter (Phase D)** — a `CaptureAdapter` over `getUserMedia` + `AudioWorklet`
   so the live console can run **without the Node host**. `WebAudioCaptureAdapter` enumerates audio inputs,
   captures via an AudioWorklet (shipped as a `WEB_AUDIO_PROCESSOR_SOURCE` string the host blobs into a module
