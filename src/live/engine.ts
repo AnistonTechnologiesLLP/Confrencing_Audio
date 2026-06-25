@@ -3,6 +3,7 @@
  * per captured block. Pure orchestration (no node:* / no audio I/O of its own).
  */
 import type { CaptureAdapter, LiveConfig, BeamOutput, AutoSteerMode, CleaningConfig, AecConfig, AgcConfig } from './types.js';
+import { composeNulls } from './null-budget.js';
 import { StreamingVoiceGate } from './voice-gate.js';
 import type { PeqBand } from '../model/dsp-blocks.js';
 import { TargetLoudnessAgc } from './agc.js';
@@ -27,6 +28,7 @@ export class LiveEngine {
   private readonly adapter: CaptureAdapter;
   private readonly config: LiveConfig;
   private readonly beam: LiveBeam;
+  private readonly freqBeam: FreqDomainBeam | null;
   private readonly meter = new LevelMeter();
   private _azimuthDeg: number;
   private _offNadirDeg: number;
@@ -63,6 +65,19 @@ export class LiveEngine {
             ...(config.taps !== undefined ? { taps: config.taps } : {}),
           });
     this.beam.setLook(this._azimuthDeg, this._offNadirDeg);
+    this.freqBeam = this.beam instanceof FreqDomainBeam ? this.beam : null;
+    // Apply static exclusion/seat nulls once now (before the DOA cycle runs, so they take effect
+    // even when autoSteer is off / no DOA cycle is configured).
+    if (this.freqBeam && config.nulls) {
+      const nc = config.nulls;
+      const M = config.geom.activeIndices().length - 1;
+      const composed = composeNulls(this._azimuthDeg, [], M, {
+        ...(nc.exclusionDeg ? { exclusion: nc.exclusionDeg } : {}),
+        ...(nc.seatDeg ? { seats: nc.seatDeg } : {}),
+        ...(nc.seatNullMaxCount !== undefined ? { seatNullMaxCount: nc.seatNullMaxCount } : {}),
+      });
+      this.freqBeam.setNulls(composed);
+    }
     // --- Phase 2: optional auto-steer ---
     const as = config.autoSteer;
     if (as && as.mode !== 'manual') {
@@ -208,6 +223,20 @@ export class LiveEngine {
               this.lastDoa = detect(snap.rBand, snap.freqs, this.config.geom, this.doaOpts);
               const decision = this.autosteer.decide(this.lastDoa);
               if (decision.lookAzimuthDeg !== null) this.setLook(decision.lookAzimuthDeg);
+              // Refine nulls with detected interferers (auto-null path).
+              const nc = this.config.nulls;
+              if (nc && this.freqBeam) {
+                const detected = nc.autoNullInterferers
+                  ? this.lastDoa.detections.map((d) => d.azimuthDeg).filter((a) => Math.abs(a - this._azimuthDeg) >= 8)
+                  : [];
+                const M = this.config.geom.activeIndices().length - 1;
+                const composed = composeNulls(this._azimuthDeg, detected, M, {
+                  ...(nc.exclusionDeg ? { exclusion: nc.exclusionDeg } : {}),
+                  ...(nc.seatDeg ? { seats: nc.seatDeg } : {}),
+                  ...(nc.seatNullMaxCount !== undefined ? { seatNullMaxCount: nc.seatNullMaxCount } : {}),
+                });
+                this.freqBeam.setNulls(composed);
+              }
             }
           }
         }
@@ -232,6 +261,7 @@ export class LiveEngine {
           ...(this.aecActive && this.aec ? { aec: { erleDb: this.aec.erleDb, farendActive: this.aec.farendActive } } : {}),
           ...(this.agc ? { agc: { gainLinear: this.agc.gainLinear } } : {}),
           ...(this.voiceGate ? { voiceGate: { open: this.voiceGate.gateOpen, reductionDb: this.voiceGate.reductionDb, score: this.voiceGate.score } } : {}),
+          ...(this.freqBeam && this.config.nulls ? { activeNulls: this.freqBeam.activeNulls } : {}),
         });
       },
     });

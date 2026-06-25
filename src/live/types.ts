@@ -58,6 +58,8 @@ export interface BeamOutput {
   aec?: { erleDb: number; farendActive: boolean };
   agc?: { gainLinear: number };
   voiceGate?: { open: boolean; reductionDb: number; score: number };
+  /** Currently-applied null bearings (array-relative deg). Omitted when nulls config is absent or beam is delay-sum. */
+  activeNulls?: number[];
 }
 
 export interface AecConfig {
@@ -107,6 +109,18 @@ export interface CleaningConfig {
   dereverb?: { t60?: number; beta?: number; gminDb?: number; earlyMs?: number };
 }
 
+/** Opt-in null-steering config for the frequency-domain beam. */
+export interface NullsConfig {
+  /** Automatically null detected interferers (requires autoSteer DOA cycle). */
+  autoNullInterferers?: boolean;
+  /** User-drawn exclusion azimuths (deg) — always applied on the freq-domain beam. */
+  exclusionDeg?: number[];
+  /** Empty-seat azimuths (deg) — lowest-priority speculative nulls. */
+  seatDeg?: number[];
+  /** Cap the seat nulls to reserve budget headroom. */
+  seatNullMaxCount?: number;
+}
+
 /** Engine configuration. */
 export interface LiveConfig {
   geom: ArrayGeometry;
@@ -117,6 +131,7 @@ export interface LiveConfig {
   taps?: number;
   beam?: 'delaySum' | 'freqDomain';
   autoSteer?: AutoSteerConfig;
+  nulls?: NullsConfig;
   cleaning?: CleaningConfig;
   aec?: AecConfig;
   agc?: AgcConfig;

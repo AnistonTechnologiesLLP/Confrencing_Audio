@@ -54,4 +54,5 @@ export { StreamingPeq, PEQ_DENORMAL_FLOOR } from './peq.js';
 export type { PeqConfig } from './types.js';
 export { SpeechPresenceScorer, alphaFor, VG_HOP_SECONDS, VG_TAU_FAST, VG_TAU_SLOW, VG_TAU_MOD, VG_MOD_REF, VG_LEVEL_FLOOR, type SpeechPresenceOptions } from './speech-presence.js';
 export { StreamingVoiceGate, VG_THRESHOLD, VG_FLOOR_DB, VG_ATTACK_MS, VG_RELEASE_MS, type VoiceGateOptions } from './voice-gate.js';
-export type { BandLimitConfig, VoiceGateConfig } from './types.js';
+export type { BandLimitConfig, VoiceGateConfig, NullsConfig } from './types.js';
+export { composeNulls, NULL_MIN_SEP_DEG, NULL_MERGE_SEP_DEG, type ComposeNullsOptions } from './null-budget.js';
