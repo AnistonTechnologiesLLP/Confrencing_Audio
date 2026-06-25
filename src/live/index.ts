@@ -74,3 +74,9 @@ export {
   Dfn3Cleaner, DFN3_SR, DFN3_HOP, DFN3_STATE_LEN, DFN3_LOOKAHEAD, DEFAULT_ATTEN_LIM_DB, DEFAULT_DFN3_MIX,
   type Dfn3Session, type Dfn3Options,
 } from './dfn3-cleaner.js';
+// Phase D — browser / Web-Audio capture adapter (honest stereo-only)
+export {
+  WebAudioCaptureAdapter, mapAudioInputDevices, webAudioAvailable, WEB_AUDIO_MAX_CHANNELS,
+  type AudioInputInfo, type WebAudioAdapterOptions,
+} from './web-audio-adapter.js';
+export { WEB_AUDIO_PROCESSOR_SOURCE, WEB_AUDIO_PROCESSOR_NAME } from './web-audio-processor.js';

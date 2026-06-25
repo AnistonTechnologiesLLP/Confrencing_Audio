@@ -192,6 +192,16 @@ Key structural facts that span files:
   the real `onnxruntime`-backed session factory (node-only, optional peer-dep, the model is NOT bundled) +
   bridging async `onnxruntime-node.run()` to the sync `Dfn3Session` seam (a worker thread / sync runtime).
 
+- **Browser Web-Audio capture (Phase D, `src/live/{web-audio-adapter,web-audio-processor}.ts`).** A
+  `CaptureAdapter` over `getUserMedia` + `AudioWorklet` so the live console can run without the Node host.
+  **HARD LIMIT (load-bearing, not a bug):** a browser CANNOT capture the 8 discrete POLARIS capsules —
+  `getUserMedia` downmixes a multichannel USB device to **stereo** before Web-Audio sees it, so
+  `WebAudioCaptureAdapter` delivers **≤ 2 channels** and never fabricates 8 (clamped at `WEB_AUDIO_MAX_CHANNELS`).
+  It's an honest stereo/mono demo path; real array beamforming needs `./live-node` + `naudiodon2`. The
+  AudioWorklet ships as a `WEB_AUDIO_PROCESSOR_SOURCE` string (the host blobs it into a module URL — avoids
+  typechecking the worklet-scope globals not in the `DOM` lib). The pure device mapper + availability +
+  unavailable-path are unit-tested; the live getUserMedia/worklet flow is browser-manual.
+
 ## Conventions
 
 - **Relative imports carry a `.js` extension** even though sources are `.ts` (ESM resolution). Match this —

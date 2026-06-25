@@ -799,6 +799,28 @@ epsilon). **Honest limits:** the ONNX model is **not bundled** (multi-MB — a h
 addon); `onnxruntime` is an optional peer-dependency; and the synchronous `Dfn3Session` seam needs a host
 async→sync bridge for `onnxruntime-node` (a worker thread or a sync runtime) — deferred host wiring.
 
+### Browser / Web-Audio capture (Phase D)
+
+A `CaptureAdapter` over `getUserMedia` + `AudioWorklet`, so the live console can run **without the Node host**.
+
+```ts
+import { WebAudioCaptureAdapter, WEB_AUDIO_PROCESSOR_SOURCE } from 'conferencing-audio-pipeline/live';
+
+const processorUrl = URL.createObjectURL(new Blob([WEB_AUDIO_PROCESSOR_SOURCE], { type: 'application/javascript' }));
+const adapter = new WebAudioCaptureAdapter({ processorUrl });
+const engine = new LiveEngine(adapter, { geom, deviceName: 'web', sampleRate: 48000 });
+await engine.start(); // → getUserMedia + an AudioWorklet feed the engine
+```
+
+> **Honest, load-bearing limit:** a browser **cannot** capture the 8 discrete POLARIS capsules. `getUserMedia`
+> downmixes a multichannel USB device to **stereo** before Web-Audio sees it, so this adapter delivers **at most
+> 2 channels** — an honest stereo/mono meter or single-channel-cleaning demo (or feeding the synthetic visualizer
+> from a real but downmixed input). It **never fabricates 8 channels**. For real 8-capsule array beamforming, use
+> the Node host (`./live-node` + `naudiodon2`).
+
+The pure device mapper, availability check, and unavailable-path are unit-tested; the live getUserMedia/worklet
+flow is verified in a real browser. Zero new dependencies.
+
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md) for the version history.
