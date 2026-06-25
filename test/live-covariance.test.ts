@@ -14,7 +14,7 @@ function feed(acc: StreamingCovarianceAccumulator, channels: Float32Array[], chu
 describe('StreamingCovarianceAccumulator', () => {
   it('is null until warmed up, then yields a Hermitian band covariance', () => {
     const acc = new StreamingCovarianceAccumulator({ channels: 8, sampleRate: 44100, warmupFrames: 4 });
-    const chans = planeWaveChannels(sensibel8(0.04), 90, 90, 1500, 44100, 8192);
+    const chans = planeWaveChannels(sensibel8(0.04), 90, 1500, 8192, 0, 44100);
     expect(acc.snapshot()).toBeNull(); // nothing fed yet
     feed(acc, chans, 512);
     const snap = acc.snapshot();
@@ -34,7 +34,7 @@ describe('StreamingCovarianceAccumulator', () => {
   });
 
   it('bridges odd block sizes to the same result as 512-sample blocks', () => {
-    const chans = planeWaveChannels(sensibel8(0.04), 45, 90, 1200, 44100, 8192);
+    const chans = planeWaveChannels(sensibel8(0.04), 45, 1200, 8192, 0, 44100);
     const a = new StreamingCovarianceAccumulator({ channels: 8, sampleRate: 44100, warmupFrames: 1 });
     const b = new StreamingCovarianceAccumulator({ channels: 8, sampleRate: 44100, warmupFrames: 1 });
     feed(a, chans, 512); // hop-aligned

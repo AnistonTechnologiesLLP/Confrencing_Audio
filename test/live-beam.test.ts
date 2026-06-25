@@ -154,7 +154,7 @@ describe('StreamingDelaySumBeam', () => {
     const geom = sensibel8(0.04);
     const beam = new StreamingDelaySumBeam(geom, 44100, {});
     beam.setLook(40, 90);
-    const mk = (i: number): Float32Array[] => planeWaveChannels(geom, 40, 90, 1000, 44100, 256 + i);
+    const mk = (i: number): Float32Array[] => planeWaveChannels(geom, 40, 1000, 256 + i, i, 44100);
     const first = beam.process(mk(0)).slice();
     beam.process(mk(1)); // dirty any history
     beam.reset();

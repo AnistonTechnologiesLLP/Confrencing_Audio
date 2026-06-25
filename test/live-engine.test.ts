@@ -219,7 +219,7 @@ describe('LiveEngine cleaning', () => {
       }
       start(opts: CaptureStartOptions): Promise<void> {
         for (let b = 0; b < BLOCKS; b++) {
-          const tone = planeWaveChannels(geom, 90, 90, 1500, SR, BLOCK_SIZE);
+          const tone = planeWaveChannels(geom, 90, 1500, BLOCK_SIZE, b, SR);
           // add seeded white noise to every channel
           const noisy = tone.map((ch) => {
             const out = new Float32Array(BLOCK_SIZE);

@@ -1770,7 +1770,7 @@ if (cvs) {
   }
   function tick() {
     if (!running || mode() !== 'synthetic') return;
-    const blk = LIVE.planeWaveChannels(geom, talkerAz, 90, (+freqIn.value) || 1500, SR, N);
+    const blk = LIVE.planeWaveChannels(geom, talkerAz, (+freqIn.value) || 1500, N, 0, SR);
     const amp = (+noiseIn.value) || 0;
     if (amp > 0) for (const ch of blk) for (let i = 0; i < ch.length; i++) { rng = (rng * 1103515245 + 12345) & 0x7fffffff; ch[i] += amp * ((rng / 0x7fffffff) * 2 - 1); }
     adapter.push(blk); draw(); raf = requestAnimationFrame(tick);
