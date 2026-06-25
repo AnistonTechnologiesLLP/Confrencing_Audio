@@ -134,4 +134,11 @@ describe('FreqDomainBeam null-steering', () => {
     const b = new FreqDomainBeam(GEOM, FS); b.setLook(0, 90); b.setNulls([90]); b.setNulls([]);
     expect(b.debugWeightsHash()).toBe(a.debugWeightsHash());
   });
+
+  it('steer() sets look + nulls in a single recompute', () => {
+    const a = new FreqDomainBeam(GEOM, FS); a.setLook(30, 90); a.setNulls([120]);
+    const b = new FreqDomainBeam(GEOM, FS); b.steer(30, 90, [120]);
+    expect(b.debugWeightsHash()).toBe(a.debugWeightsHash());
+    expect(b.activeNulls).toEqual([120]);
+  });
 });

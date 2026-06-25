@@ -88,6 +88,18 @@ export class FreqDomainBeam implements LiveBeam {
     this.recompute();
   }
 
+  /** Set look + nulls together and recompute once (used by the multi-beam mixer). */
+  steer(azimuthDeg: number, offNadirDeg: number, nullsDeg: readonly number[]): void {
+    const sameLook = azimuthDeg === this.azimuthDeg && offNadirDeg === this.offNadirDeg;
+    const nextNulls = [...nullsDeg];
+    const sameNulls = nextNulls.length === this.nullsDeg.length && nextNulls.every((v, i) => v === this.nullsDeg[i]);
+    if (sameLook && sameNulls) return;
+    this.azimuthDeg = azimuthDeg;
+    this.offNadirDeg = offNadirDeg;
+    this.nullsDeg = nextNulls;
+    this.recompute();
+  }
+
   /** Set the null bearings (array-relative deg); recomputes the weights only when the set changes. */
   setNulls(azimuthsDeg: readonly number[]): void {
     const next = [...azimuthsDeg];
