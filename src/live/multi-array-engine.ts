@@ -42,6 +42,13 @@ export class MultiArrayEngine {
   private tSec = 0;
 
   constructor(kits: readonly [KitSpec, KitSpec], sampleRate: number, opts: MultiArrayEngineOptions = {}) {
+    // Per-kit AGC must be OFF: the combiner applies the single combined AGC. Two independently-leveled kits
+    // would degenerate the speech-presence selection (both score the same) and pump against the combined AGC.
+    for (let i = 0; i < 2; i++) {
+      if (kits[i]!.config.agc !== undefined) {
+        throw new Error(`MultiArrayEngine: kit ${i} must have AGC off — the combiner applies the single combined AGC`);
+      }
+    }
     this.sr = sampleRate;
     this.poses = [kits[0].pose, kits[1].pose];
     this.polygon = opts.polygon ?? [];
@@ -67,9 +74,15 @@ export class MultiArrayEngine {
   private combine(): void {
     this.fresh[0] = false;
     this.fresh[1] = false;
-    const k0 = this.latest[0]!;
-    const k1 = this.latest[1]!;
-    this.tSec += k0.mono.length / this.sr;
+    let k0 = this.latest[0]!;
+    let k1 = this.latest[1]!;
+    // The two engines run on independent clocks; if they ever produce different-length blocks (mismatched
+    // host block sizes), clamp both to the shorter so the combiner's per-sample mix can't read past an end
+    // and emit NaN. Equal lengths (the normal case) hit the fast path with no allocation.
+    const n = Math.min(k0.mono.length, k1.mono.length);
+    if (k0.mono.length !== n) k0 = { ...k0, mono: k0.mono.subarray(0, n) };
+    if (k1.mono.length !== n) k1 = { ...k1, mono: k1.mono.subarray(0, n) };
+    this.tSec += n / this.sr;
     const out =
       this.polygon.length > 0
         ? this.combiner.process([k0, k1], this.tSec, { poses: this.poses, polygon: this.polygon })
@@ -92,5 +105,6 @@ export class MultiArrayEngine {
     this.latest[1] = null;
     this.fresh[0] = false;
     this.fresh[1] = false;
+    this.tSec = 0; // restart the combiner time base cleanly on a stop/restart
   }
 }

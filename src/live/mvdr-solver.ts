@@ -104,7 +104,9 @@ export function computeBeamWeights(
       const rn: Complex[][] = idx.map((ri) => idx.map((ci) => ({ ...cov[ri]![ci]! })));
       let trSum = 0;
       for (let i = 0; i < na; i++) trSum += rn[i]![i]!.re;
-      const ld = loading * Math.max(trSum / na, 1e-20); // trace-relative loading
+      // trace-relative loading, floored at MVDR_LOADING_FLOOR so a near-zero-trace measured cell can't
+      // drop the diagonal below the solve's singular-pivot threshold (the audio-path solve must not throw).
+      const ld = Math.max(loading * Math.max(trSum / na, 1e-20), MVDR_LOADING_FLOOR);
       for (let i = 0; i < na; i++) rn[i]![i] = cadd(rn[i]![i]!, complex(ld, 0));
       R = rn;
     } else {

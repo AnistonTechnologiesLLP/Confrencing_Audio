@@ -101,7 +101,9 @@ export class LiveEngine {
     if (this.mvdr) {
       // A second, NOISE-GATED covariance for the data-adaptive MVDR beam (folds only on VAD-silent frames so it
       // doesn't null the talker). Snapshotted into the freq-domain beam as the measured-R provider.
-      this.noiseCov = new StreamingCovarianceAccumulator({ channels: config.geom.nChannels, sampleRate: config.sampleRate ?? 44100 });
+      // warmupFrames 16 matches the Python `_NOISE_WARMUP_FRAMES` — the measured-R must be well-converged
+      // (4 folded frames at α=0.05 is ~18% of steady-state) before it feeds the solve, or the null is weak/noisy.
+      this.noiseCov = new StreamingCovarianceAccumulator({ channels: config.geom.nChannels, sampleRate: config.sampleRate ?? 44100, warmupFrames: 16 });
     }
     if (as && as.mode !== 'manual') {
       this._mode = as.mode;
@@ -278,7 +280,10 @@ export class LiveEngine {
         if (this.cov && (this.autosteer || this.mixer || this.mvdr)) {
           this.cov.accumulate(channels);
           // A3b: accumulate the NOISE-gated covariance (fold only on VAD-silent frames) for data-adaptive MVDR.
-          if (this.noiseCov) this.noiseCov.accumulate(channels, this.lastDoa ? !this.lastDoa.active : true);
+          // Cold start (no DOA yet) → DON'T fold: a talker speaking at startup must not enter the noise R
+          // (it would later be nulled). Matches the Python noise-gate default of False. Train only once a
+          // DOA cycle has confirmed a VAD-silent frame.
+          if (this.noiseCov) this.noiseCov.accumulate(channels, this.lastDoa ? !this.lastDoa.active : false);
           if (this.cov.framesSeen - this.lastFrames >= this.detectionHops) {
             this.lastFrames = this.cov.framesSeen;
             const snap = this.cov.snapshot();

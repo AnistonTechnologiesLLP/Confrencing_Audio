@@ -69,4 +69,43 @@ describe('MultiArrayEngine', () => {
     expect(a0.running).toBe(false);
     expect(a1.running).toBe(false);
   });
+
+  it('rejects per-kit AGC at construction (the combiner owns the single combined AGC)', () => {
+    const a0 = new ManualCaptureAdapter({ channels: 8 });
+    const a1 = new ManualCaptureAdapter({ channels: 8 });
+    expect(
+      () =>
+        new MultiArrayEngine(
+          [
+            { adapter: a0, config: { geom: GEOM, deviceName: 'k0', sampleRate: FS, azimuthDeg: 0, agc: { targetDb: -20 } }, pose: poseA },
+            { adapter: a1, config: { geom: GEOM, deviceName: 'k1', sampleRate: FS, azimuthDeg: 0 }, pose: poseB },
+          ],
+          FS,
+        ),
+    ).toThrow(/AGC off/);
+  });
+
+  it('clamps mismatched kit block lengths instead of emitting NaN', async () => {
+    const a0 = new ManualCaptureAdapter({ channels: 8 });
+    const a1 = new ManualCaptureAdapter({ channels: 8 });
+    const mae = new MultiArrayEngine(
+      [
+        { adapter: a0, config: { geom: GEOM, deviceName: 'k0', sampleRate: FS, azimuthDeg: 0 }, pose: poseA },
+        { adapter: a1, config: { geom: GEOM, deviceName: 'k1', sampleRate: FS, azimuthDeg: 0 }, pose: poseB },
+      ],
+      FS,
+    );
+    const outs: CombinedOutput[] = [];
+    mae.onOutput((o) => outs.push(o));
+    await mae.start();
+    for (let i = 0; i < 6; i++) {
+      a0.push(planeWaveChannels(GEOM, 0, 1000, 512, i, FS)); // 512-sample blocks
+      a1.push(planeWaveChannels(GEOM, 0, 1000, 256, i, FS)); // 256-sample blocks (shorter)
+    }
+    await mae.stop();
+    expect(outs.length).toBe(6);
+    const last = outs.at(-1)!;
+    expect(last.mono.length).toBe(256); // clamped to the shorter kit
+    for (const v of last.mono) expect(Number.isFinite(v)).toBe(true); // no NaN from out-of-bounds reads
+  });
 });
