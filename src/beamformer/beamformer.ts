@@ -110,7 +110,7 @@ export function diffuseCoherence(geom: ArrayGeometry, freqHz: number): number[][
 }
 
 /** Solve `A x = b` for square complex `A` (Gauss-Jordan, partial pivot). */
-function solve(a: Complex[][], b: Complex[]): Complex[] {
+export function solve(a: Complex[][], b: Complex[]): Complex[] {
   const n = b.length;
   const aug: Complex[][] = [];
   for (let i = 0; i < n; i++) {
@@ -152,7 +152,7 @@ function solve(a: Complex[][], b: Complex[]): Complex[] {
 }
 
 /** Raised when a complex linear solve hits a singular matrix (mirrors Python ZeroDivisionError). */
-class SingularMatrixError extends Error {}
+export class SingularMatrixError extends Error {}
 
 /** Solve `R x = b` for a real matrix `R` and complex `b`. */
 function solveReal(r: number[][], b: Complex[]): Complex[] {

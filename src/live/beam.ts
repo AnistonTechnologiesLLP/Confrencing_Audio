@@ -9,6 +9,12 @@
  */
 import { type ArrayGeometry, SOUND_SPEED_MPS } from '../beamformer/geometry.js';
 
+export interface LiveBeam {
+  setLook(azimuthDeg: number, offNadirDeg?: number): void;
+  process(channels: Float32Array[]): Float32Array;
+  reset(): void;
+}
+
 export const DEFAULT_FRACDELAY_TAPS = 15;
 
 /** Steering unit vector from azimuth/off-nadir (0°=+Y CW; off-nadir 0°=straight down). */
@@ -86,7 +92,7 @@ function convolveValid(a: Float64Array, k: Float64Array): Float64Array {
  * history ring) + a fractional remainder (a Hann-sinc FIR), continuous across
  * block boundaries via a per-channel FIR tail. Port of `_FracDelaySumBeam`.
  */
-export class StreamingDelaySumBeam {
+export class StreamingDelaySumBeam implements LiveBeam {
   private readonly geom: ArrayGeometry;
   private readonly fs: number;
   private readonly c: number;

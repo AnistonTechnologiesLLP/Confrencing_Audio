@@ -58,6 +58,10 @@ export interface BeamOutput {
   aec?: { erleDb: number; farendActive: boolean };
   agc?: { gainLinear: number };
   voiceGate?: { open: boolean; reductionDb: number; score: number };
+  /** Currently-applied null bearings (array-relative deg). Omitted when nulls config is absent or beam is delay-sum. */
+  activeNulls?: number[];
+  /** Opt-in multi-beam slot + gate telemetry. Omitted when multiBeam config is absent. */
+  multiBeam?: { slots: { azimuthDeg: number | null; active: boolean; held: boolean }[]; gates: number[] };
 }
 
 export interface AecConfig {
@@ -107,6 +111,27 @@ export interface CleaningConfig {
   dereverb?: { t60?: number; beta?: number; gminDb?: number; earlyMs?: number };
 }
 
+/** Opt-in null-steering config for the frequency-domain beam. */
+export interface NullsConfig {
+  /** Automatically null detected interferers (requires autoSteer DOA cycle). */
+  autoNullInterferers?: boolean;
+  /** User-drawn exclusion azimuths (deg) — always applied on the freq-domain beam. */
+  exclusionDeg?: number[];
+  /** Empty-seat azimuths (deg) — lowest-priority speculative nulls. */
+  seatDeg?: number[];
+  /** Cap the seat nulls to reserve budget headroom. */
+  seatNullMaxCount?: number;
+}
+
+/** Opt-in multi-beam (multi-talker) config. */
+export interface MultiBeamConfig {
+  nBeams?: number;
+  holdSeconds?: number;
+  matchRadiusDeg?: number;
+  /** Run detect every K covariance hops (default 11 ≈ 8 Hz at 44.1 kHz). Same semantics as AutoSteerConfig.detectionHops. */
+  detectionHops?: number;
+}
+
 /** Engine configuration. */
 export interface LiveConfig {
   geom: ArrayGeometry;
@@ -115,11 +140,15 @@ export interface LiveConfig {
   azimuthDeg?: number;
   offNadirDeg?: number;
   taps?: number;
+  beam?: 'delaySum' | 'freqDomain';
   autoSteer?: AutoSteerConfig;
+  nulls?: NullsConfig;
   cleaning?: CleaningConfig;
   aec?: AecConfig;
   agc?: AgcConfig;
   peq?: PeqConfig;
   bandLimit?: BandLimitConfig;
   voiceGate?: VoiceGateConfig;
+  /** Opt-in multi-beam (multi-talker) mode. When set, the engine builds a MultiBeamMixer driven by the DOA cycle. */
+  multiBeam?: MultiBeamConfig;
 }

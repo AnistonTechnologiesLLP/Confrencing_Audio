@@ -7,22 +7,29 @@ import type { CaptureAdapter, CaptureDevice, CaptureStartOptions } from './types
 import { sensibel8, type ArrayGeometry } from '../beamformer/geometry.js';
 import { steerRealDelays } from './beam.js';
 
-/** M channels carrying a sinusoid arriving as a plane wave from `(az, off)`. */
+/** M channels carrying a phase-continuous sinusoid arriving as a plane wave from `(az, off)`.
+ *
+ * Phase continuity: sample index within the global timeline is `blockIndex * n + i`, so
+ * consecutive calls with incrementing `blockIndex` produce a seamless sinusoid.
+ */
 export function planeWaveChannels(
   geom: ArrayGeometry,
   azimuthDeg: number,
-  offNadirDeg: number,
   freqHz: number,
-  fs: number,
   n: number,
+  blockIndex: number,
+  sampleRate: number,
+  offNadirDeg = 90,
 ): Float32Array[] {
-  const { idx, delays } = steerRealDelays(geom, azimuthDeg, offNadirDeg, fs);
+  const { idx, delays } = steerRealDelays(geom, azimuthDeg, offNadirDeg, sampleRate);
   const maxD = delays.length > 0 ? Math.max(...delays) : 0;
   const channels: Float32Array[] = Array.from({ length: geom.nChannels }, () => new Float32Array(n));
   idx.forEach((m, k) => {
     const arrival = maxD - delays[k]!;
     const ch = channels[m]!;
-    for (let i = 0; i < n; i++) ch[i] = Math.sin((2 * Math.PI * freqHz * (i - arrival)) / fs);
+    for (let i = 0; i < n; i++) {
+      ch[i] = Math.sin((2 * Math.PI * freqHz * (blockIndex * n + i - arrival)) / sampleRate);
+    }
   });
   return channels;
 }
@@ -67,7 +74,7 @@ export class MockCaptureAdapter implements CaptureAdapter {
     this.running = true;
     for (let b = 0; b < this.blocks && this.running; b++) {
       const block = planeWaveChannels(
-        this.geom, this.azimuthDeg, this.offNadirDeg, this.freqHz, opts.sampleRate, this.blockSize,
+        this.geom, this.azimuthDeg, this.freqHz, this.blockSize, b, opts.sampleRate, this.offNadirDeg,
       );
       opts.onBlock(block, opts.sampleRate);
     }
