@@ -80,6 +80,20 @@ describe('MultiArrayCombiner', () => {
       );
     }
     expect(out.fenceKeep).toBe(false); // the out-of-fence source is vetoed
+    // and the OUTPUT is ducked (−60 dB by default) — not just the kit dropped from contention
+    expect(rms(out.mono)).toBeLessThan(rms(tone(1e-4)) * 0.01);
+  });
+
+  it('fenceDuckDb sets the reject-duck depth; keep ⇒ no duck', () => {
+    const poseA: KitPose = { position: { x: 0, y: 0 }, bearingDeg: 0 };
+    const poseB: KitPose = { position: { x: 4, y: 0 }, bearingDeg: 0 };
+    const polygon = [{ x: -0.5, y: -0.5 }, { x: 0.5, y: -0.5 }, { x: 0.5, y: 0.5 }, { x: -0.5, y: 0.5 }];
+    const c = new MultiArrayCombiner(FS, { nKits: 2, fence: { holdTicks: 1, marginM: 0.1 }, fenceDuckDb: -20, crossfadeBlocks: 1 });
+    let out = c.process([{ mono: tone(0.1), azimuthDeg: 80, salienceDb: -30 }, { mono: tone(0.1), azimuthDeg: 280, salienceDb: -30 }], 0, { poses: [poseA, poseB], polygon });
+    for (let i = 1; i < 5; i++) out = c.process([{ mono: tone(0.1), azimuthDeg: 80, salienceDb: -30 }, { mono: tone(0.1), azimuthDeg: 280, salienceDb: -30 }], (i * N) / FS, { poses: [poseA, poseB], polygon });
+    expect(out.fenceKeep).toBe(false);
+    // −20 dB duck ≈ 0.1× the un-ducked level
+    expect(rms(out.mono)).toBeCloseTo(rms(tone(0.1)) * 0.1, 2);
   });
 
   it('reset() clears selection + fade + scorers', () => {

@@ -38,6 +38,7 @@ export interface MultiArrayCombinerOptions {
   fence?: { holdTicks?: number; marginM?: number; insideDb?: number } | null;
   selector?: KitSelectorOptions;
   scorerHopSeconds?: number;
+  fenceDuckDb?: number;
 }
 
 function rmsOf(x: Float32Array): number {
@@ -53,9 +54,12 @@ function rmsOf(x: Float32Array): number {
  */
 export class MultiArrayCombiner {
   private readonly n: number;
+  private readonly sampleRate: number;
   private readonly crossfadeBlocks: number;
+  private readonly explicitHop: number | undefined;
+  private readonly fenceDuckGain: number;
   private readonly selector: KitSelector;
-  private readonly scorers: SpeechPresenceScorer[];
+  private scorers: SpeechPresenceScorer[] | null = null; // lazily built from the first block's hop
   private readonly fence: FenceDecider | null;
   private readonly agc: TargetLoudnessAgc | null;
   private _active = 0;
@@ -65,12 +69,22 @@ export class MultiArrayCombiner {
 
   constructor(sampleRate: number, opts: MultiArrayCombinerOptions = {}) {
     this.n = opts.nKits ?? 2;
+    this.sampleRate = sampleRate;
     this.crossfadeBlocks = Math.max(1, opts.crossfadeBlocks ?? DEFAULT_CROSSFADE_BLOCKS);
+    this.explicitHop = opts.scorerHopSeconds;
+    this.fenceDuckGain = Math.pow(10, (opts.fenceDuckDb ?? -60) / 20); // duck the output when the fence rejects
     this.selector = new KitSelector({ nKits: this.n, ...(opts.selector ?? {}) });
-    const hop = opts.scorerHopSeconds ?? 0.0116;
-    this.scorers = Array.from({ length: this.n }, () => new SpeechPresenceScorer({ hopSeconds: hop }));
     this.fence = opts.fence ? new FenceDecider(opts.fence) : null;
     this.agc = opts.agc ? new TargetLoudnessAgc(sampleRate, opts.agc) : null;
+  }
+
+  private ensureScorers(blockLen: number): SpeechPresenceScorer[] {
+    if (this.scorers === null) {
+      // tie the scorer EMA cadence to the real block duration (Python `hop_s = blocksize/sample_rate`).
+      const hop = this.explicitHop ?? blockLen / this.sampleRate;
+      this.scorers = Array.from({ length: this.n }, () => new SpeechPresenceScorer({ hopSeconds: hop }));
+    }
+    return this.scorers;
   }
 
   get active(): number {
@@ -84,9 +98,10 @@ export class MultiArrayCombiner {
   ): CombinedOutput {
     const n = this.n;
     const len = kits[0]!.mono.length;
+    const scorers = this.ensureScorers(len);
     // per-kit speech-presence scores from each kit's output RMS
     const scores: number[] = [];
-    for (let i = 0; i < n; i++) scores.push(this.scorers[i]!.update(rmsOf(kits[i]!.mono)));
+    for (let i = 0; i < n; i++) scores.push(scorers[i]!.update(rmsOf(kits[i]!.mono)));
 
     // optional fence veto (drops the vetoed kit from contention)
     const eff = [...scores];
@@ -126,6 +141,10 @@ export class MultiArrayCombiner {
     }
 
     const mono = this.agc ? this.agc.process(out, false) : out;
+    // Fence output gate (after the AGC so it isn't pulled back up): duck the output when the fence rejects.
+    if (fenceKeep === false) {
+      for (let i = 0; i < mono.length; i++) mono[i] = mono[i]! * this.fenceDuckGain;
+    }
     return { mono, active: this._active, switching: state.switching, speechPresent: state.speechPresent, scores: state.scores, fenceKeep };
   }
 
@@ -135,7 +154,7 @@ export class MultiArrayCombiner {
     this.fadeStep = 0;
     this.fadeFrom = 0;
     this.selector.reset();
-    for (const s of this.scorers) s.reset();
+    if (this.scorers) for (const s of this.scorers) s.reset();
     if (this.fence) this.fence.reset();
     if (this.agc) this.agc.reset();
   }
