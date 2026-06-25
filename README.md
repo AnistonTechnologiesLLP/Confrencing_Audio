@@ -701,6 +701,42 @@ does **not** remove a competing human voice in the pickup zone (that is speech; 
 Omitting any stage is byte-identical. Phase 3d completes the live cleaning chain (AEC → dereverb → denoise →
 PEQ → AGC → band-limit → voice-gate).
 
+### Frequency-domain null-steering + multi-talker (Phase A)
+
+An opt-in upgrade to the live **beam** (the front of the chain) — superdirective rejection, exact spatial nulls,
+and N-beam multi-talker capture. All opt-in, default-off byte-identical, zero-dependency.
+
+```ts
+const engine = new LiveEngine(new NodeCaptureAdapter(), {
+  geom, deviceName: 'SB-POLARIS', sampleRate: 44100,
+  beam: 'freqDomain',                                  // superdirective STFT beam (vs the default delay-sum)
+  nulls: { autoNullInterferers: true, exclusionDeg: [180] }, // place exact nulls at interferers / a door
+  // or, for multiple simultaneous talkers (brings its own DOA — no separate autoSteer needed):
+  // multiBeam: { nBeams: 3 },
+});
+```
+
+- **`beam: 'freqDomain'`** — `FreqDomainBeam`, a Hann-1024/512 overlap-add STFT applying per-FFT-bin
+  **superdirective** (diffuse-noise MVDR) weights as a pure multiply-accumulate. It rejects isotropic room noise
+  far better than delay-and-sum at low frequency (measured **−19 dB vs −1.5 dB** off-axis at 800 Hz — where
+  rumble/HVAC live). The per-bin weight solve runs only on a re-steer (off the per-block path); ~35 ms latency
+  when active. Default `'delaySum'` is the unchanged Phase-1 beam.
+- **`nulls`** — `composeNulls` budgets detected-interferer / user-exclusion / empty-seat bearings (precedence in
+  that order, near-look drop, `M−1` cap) into the beam's **LCMV** constraint, placing exact spatial nulls
+  (measured **−66 dB** at the nulled bearing while the look stays unity). `autoNullInterferers` nulls whatever the
+  DOA layer detects; `BeamOutput.activeNulls` reports the applied bearings.
+- **`multiBeam: { nBeams }`** — N simultaneous frequency-domain beams (`MultiBeamMixer` + `BeamSlotTracker`), each
+  steered to a persistent talker slot while **nulling the other talkers**, gated by a level-invariant
+  speech-presence score and **NOM-automixed** (`mixed = Σ gₖ·monoₖ / max(1, √Σg)` — one talker passes at unity,
+  the floor doesn't stack as more open). A slot keeps the same talker across ticks (seat/bearing match, per-slot
+  hold); `BeamOutput.multiBeam` reports the slots + gates. Multi-beam runs its own DOA detection.
+
+Still zero-dependency (the FFT, complex solver, and biquads are hand-rolled). **Verified bit-exact against the
+Python** (`_FreqDomainBeam`, `MultiBeamMixer`) by an adversarial review. **Honest limits:** superdirective's
+advantage is at low frequency (at ~2–2.6 kHz the delay-sum mainlobe can edge ahead — physics, not a defect);
+null depth/count are bounded by the array (`M−1` nulls on a small 40 mm ring); the data-adaptive **measured-R**
+MVDR (nulling the *measured* field, needs a noise-gated covariance) and RTF-MVDR are deferred.
+
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md) for the version history.
