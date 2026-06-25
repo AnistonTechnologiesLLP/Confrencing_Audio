@@ -37,6 +37,8 @@ export class LiveEngine {
   private _offNadirDeg: number;
   private cb: ((out: BeamOutput) => void) | null = null;
   private cov: StreamingCovarianceAccumulator | null = null;
+  private noiseCov: StreamingCovarianceAccumulator | null = null; // noise-gated covariance for data-adaptive MVDR (A3b)
+  private mvdr = false;
   private autosteer: AutoSteerController | null = null;
   private detectionHops = 11;
   private lastFrames = 0;
@@ -66,8 +68,9 @@ export class LiveEngine {
     this._azimuthDeg = config.azimuthDeg ?? 0;
     this._offNadirDeg = config.offNadirDeg ?? 90;
     const sr = config.sampleRate ?? 44100;
+    this.mvdr = config.beam === 'mvdr';
     this.beam =
-      config.beam === 'freqDomain'
+      config.beam === 'freqDomain' || config.beam === 'mvdr'
         ? new FreqDomainBeam(config.geom, sr, { offNadirDeg: this._offNadirDeg })
         : new StreamingDelaySumBeam(config.geom, sr, {
             ...(config.taps !== undefined ? { taps: config.taps } : {}),
@@ -89,11 +92,16 @@ export class LiveEngine {
     // --- Phase 2: optional auto-steer / multi-beam DOA cycle ---
     const as = config.autoSteer;
     const mb0 = config.multiBeam;
-    if ((as && as.mode !== 'manual') || mb0 !== undefined) {
-      // Build the covariance accumulator whenever auto-steer OR multi-beam needs DOA.
+    if ((as && as.mode !== 'manual') || mb0 !== undefined || this.mvdr) {
+      // Build the covariance accumulator whenever auto-steer / multi-beam / data-adaptive MVDR needs DOA.
       this.cov = new StreamingCovarianceAccumulator({ channels: config.geom.nChannels, sampleRate: config.sampleRate ?? 44100 });
       this.detectionHops = as?.detectionHops ?? mb0?.detectionHops ?? 11;
       this.doaOpts = as?.doa ?? {};
+    }
+    if (this.mvdr) {
+      // A second, NOISE-GATED covariance for the data-adaptive MVDR beam (folds only on VAD-silent frames so it
+      // doesn't null the talker). Snapshotted into the freq-domain beam as the measured-R provider.
+      this.noiseCov = new StreamingCovarianceAccumulator({ channels: config.geom.nChannels, sampleRate: config.sampleRate ?? 44100 });
     }
     if (as && as.mode !== 'manual') {
       this._mode = as.mode;
@@ -267,13 +275,20 @@ export class LiveEngine {
         this.meter.update(mono);
         // Phase 2: feed covariance + run DOA/steer on the configured hop cadence.
         // Runs when EITHER auto-steer or multi-beam is configured (both need DOA).
-        if (this.cov && (this.autosteer || this.mixer)) {
+        if (this.cov && (this.autosteer || this.mixer || this.mvdr)) {
           this.cov.accumulate(channels);
+          // A3b: accumulate the NOISE-gated covariance (fold only on VAD-silent frames) for data-adaptive MVDR.
+          if (this.noiseCov) this.noiseCov.accumulate(channels, this.lastDoa ? !this.lastDoa.active : true);
           if (this.cov.framesSeen - this.lastFrames >= this.detectionHops) {
             this.lastFrames = this.cov.framesSeen;
             const snap = this.cov.snapshot();
             if (snap) {
               this.lastDoa = detect(snap.rBand, snap.freqs, this.config.geom, this.doaOpts);
+              // A3b: push the measured noise covariance into the beam → data-adaptive MVDR (nulls the measured field).
+              if (this.noiseCov && this.freqBeam) {
+                const nsnap = this.noiseCov.snapshot();
+                if (nsnap) this.freqBeam.setMeasured({ bandBins: nsnap.band, cov: nsnap.rBand });
+              }
               if (this.mixer && this.slotTracker) {
                 const targets = snapTargets(this.lastDoa.detections.map((d) => ({ azimuthDeg: d.azimuthDeg, salienceDb: d.salienceDb })));
                 this.lastSlots = this.slotTracker.update(targets, this._tSec);

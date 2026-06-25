@@ -57,8 +57,15 @@ export class StreamingCovarianceAccumulator {
     return this._framesSeen;
   }
 
-  /** Feed one engine block (M channels, equal length). Processes any completed hops. */
-  accumulate(channels: Float32Array[]): void {
+  /**
+   * Feed one engine block (M channels, equal length). Processes any completed hops.
+   *
+   * `gate` (default `true`) controls whether each completed frame's outer product is folded into the running
+   * covariance: pass `false` on speech frames to keep a **noise-only** covariance (the data-adaptive MVDR use —
+   * folding the target in would null the talker). The frame buffer still advances either way, so the framing
+   * stays aligned when noise resumes; `framesSeen` (the warmup counter) only advances on folded frames.
+   */
+  accumulate(channels: Float32Array[], gate = true): void {
     const n = channels[0]?.length ?? 0;
     if (n === 0) return;
     if (this.fill + n > this.fifo[0]!.length) this.grow(this.fill + n);
@@ -69,7 +76,7 @@ export class StreamingCovarianceAccumulator {
     }
     this.fill += n;
     while (this.fill >= COV_FRAME) {
-      this.processFrame();
+      if (gate) this.processFrame();
       for (let m = 0; m < this.M; m++) this.fifo[m]!.copyWithin(0, COV_HOP, this.fill);
       this.fill -= COV_HOP;
     }
@@ -119,11 +126,11 @@ export class StreamingCovarianceAccumulator {
     this._framesSeen += 1;
   }
 
-  /** Deep-copied band covariance + band frequencies, or null until warmed up. */
-  snapshot(): { rBand: Complex[][][]; freqs: number[] } | null {
+  /** Deep-copied band covariance + band frequencies + the rfft bin indices, or null until warmed up. */
+  snapshot(): { rBand: Complex[][][]; freqs: number[]; band: number[] } | null {
     if (this._framesSeen < this.warmup) return null;
     const rBand = this.R.map((mat) => mat.map((row) => row.map((c) => ({ re: c.re, im: c.im }))));
-    return { rBand, freqs: this.freqsBand.slice() };
+    return { rBand, freqs: this.freqsBand.slice(), band: this.band.slice() };
   }
 
   reset(): void {
