@@ -736,6 +736,37 @@ Python** (`_FreqDomainBeam`, `MultiBeamMixer`) by an adversarial review. **Hones
 advantage is at low frequency (at ~2–2.6 kHz the delay-sum mainlobe can edge ahead — physics, not a defect);
 null depth/count are bounded by the array (`M−1` nulls on a small 40 mm ring); the data-adaptive **measured-R**
 MVDR (nulling the *measured* field, needs a noise-gated covariance) and RTF-MVDR are deferred.
+### Dual-array triangulation (Phase B)
+
+A zero-dependency 2D-position layer for **two** arrays. Each array reports a bearing to the talker; crossing the
+two bearings from their known room poses gives a **2D position fix** that resolves the front/back ambiguity a
+single planar ring physically cannot.
+
+```ts
+import { fusePosition, FenceDecider, MultiArrayCombiner } from 'conferencing-audio-pipeline/live';
+
+// fuse two kits' readings → a room-space point + crossing confidence
+const fused = fusePosition(readingA, readingB, poseA, poseB, fencePolygon, { marginM: 0.2 });
+//   fused.point  → { x, y } in metres   (null when the bearings are near-parallel / degenerate)
+//   fused.inside → is the talker inside the user-drawn fence?
+
+// combine two arrays into one glitch-free output (select → cross-fade → one AGC → optional fence gate)
+const combiner = new MultiArrayCombiner(44100, { nKits: 2, agc: { targetDb: -20 }, fence: { marginM: 0.2 } });
+const out = combiner.process([kitBlockA, kitBlockB], tSeconds, { poses: [poseA, poseB], polygon: fencePolygon });
+//   out.mono → the combined feed; out.active → which kit; out.fenceKeep → fence decision
+```
+
+- **`triangulation.ts`** — `rayFromBearing` / `closestPointTwoRays` / `crossingConfidence` / `fusePosition`
+  (the 2D fix) + `pointInFence` (polygon with a soft margin band) + a hysteresis **`FenceDecider`** that keeps
+  or vetoes a source by whether its fused position is inside a drawn fence (anti-chatter run-length hold).
+- **`KitSelector`** — picks the active array by the level-invariant speech-presence score (fast attack to a
+  clear winner, hold through pauses, never switch to a non-talker).
+- **`MultiArrayCombiner`** — per-kit scores → selection → equal-power cross-fade on a switch → **one** combined
+  AGC; the fence drops a rejected kit from contention and ducks the output (−60 dB) when out-of-fence.
+
+Verified faithful to the Python (`fence.py`, `multikit.py`) by an adversarial geometry review. **Honest limits:**
+the pure layer is hardware-free and testable; the two-`LiveEngine` host wiring (two capture devices, independent
+clocks — no inter-kit sample alignment, equal-power fade by design) is a thin node-host concern, deferred.
 
 ## Changelog
 

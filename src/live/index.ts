@@ -55,7 +55,16 @@ export type { PeqConfig } from './types.js';
 export { SpeechPresenceScorer, alphaFor, VG_HOP_SECONDS, VG_TAU_FAST, VG_TAU_SLOW, VG_TAU_MOD, VG_MOD_REF, VG_LEVEL_FLOOR, type SpeechPresenceOptions } from './speech-presence.js';
 export { StreamingVoiceGate, VG_THRESHOLD, VG_FLOOR_DB, VG_ATTACK_MS, VG_RELEASE_MS, type VoiceGateOptions } from './voice-gate.js';
 export type { BandLimitConfig, VoiceGateConfig, NullsConfig } from './types.js';
+// Phase A — frequency-domain null-steering + multi-talker beam
 export { composeNulls, NULL_MIN_SEP_DEG, NULL_MERGE_SEP_DEG, type ComposeNullsOptions } from './null-budget.js';
 export { MultiBeamMixer, nomAutomix, type MultiBeamOptions } from './multi-beam-mixer.js';
 export { BeamSlotTracker, snapTargets, DEFAULT_N_BEAMS, DEFAULT_HOLD_SECONDS, DEFAULT_MATCH_RADIUS_DEG, type BeamSlot, type BeamTarget, type SlotTrackerOptions } from './slot-tracker.js';
 export type { MultiBeamConfig } from './types.js';
+// Phase B — dual-array triangulation
+export {
+  rayFromBearing, localAzToRoomAz, closestPointTwoRays, crossingConfidence, pointInFence, levelCrossCheck,
+  fusePosition, FenceDecider, DEFAULT_FENCE_MARGIN_M, DEFAULT_FENCE_HOLD_TICKS, FENCE_LEVEL_INSIDE_DB,
+  type KitPose, type KitReading, type Ray2D, type FusedSource, type FenceDecision,
+} from './triangulation.js';
+export { KitSelector, DEFAULT_SWITCH_MARGIN, DEFAULT_KIT_HOLD_SECONDS, DEFAULT_SPEECH_THRESHOLD, type SelectionState, type KitSelectorOptions } from './kit-selector.js';
+export { MultiArrayCombiner, crossfadeGains, DEFAULT_CROSSFADE_BLOCKS, type KitBlock, type CombinedOutput, type MultiArrayCombinerOptions } from './multi-array-combiner.js';
