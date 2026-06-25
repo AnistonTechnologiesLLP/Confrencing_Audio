@@ -37,7 +37,7 @@ export interface BeamWeightOptions {
 const ZERO = (): Complex => ({ re: 0, im: 0 });
 
 /** Wrap-aware absolute azimuth separation in [0, 180]° (Python `_az_sep`). */
-function azSep(a: number, b: number): number {
+export function azSep(a: number, b: number): number {
   const m = (((a - b + 180) % 360) + 360) % 360;
   return Math.abs(m - 180);
 }
