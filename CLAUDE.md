@@ -172,7 +172,12 @@ Key structural facts that span files:
   (`accumulate(channels, gate)` folds R only on VAD-silent frames so the talker isn't nulled; cold-start does
   NOT fold, warmup 16 = Python `_NOISE_WARMUP_FRAMES`), whose `snapshot().{rBand,band}` feeds
   `FreqDomainBeam.setMeasured` → `computeBeamWeights({measured})` overlays the measured R on the DOA-band bins
-  (trace-relative loading floored at `MVDR_LOADING_FLOOR`). Default-off byte-identical. Deferred: RTF-MVDR.
+  (trace-relative loading floored at `MVDR_LOADING_FLOOR`). Default-off byte-identical. **RTF-MVDR is also done**
+  (`beam:'rtfMvdr'`, `rtf-mvdr.ts`): a THIRD **talker-gated** covariance gives a target R; the per-bin **GEVD**
+  principal generalized eigenvector of `(R_target, R_noise)` is the data-estimated steering (relative transfer
+  function), swapped in for the plane-wave manifold only where it cross-checks against the look (cosine ≥
+  `RTF_DOA_MIN_COS`). The GEVD uses **inverse-free power iteration** (zero-dep) in place of LAPACK `eigh` —
+  faithful in formulation, numerically close not bit-exact. Port of `rtf_mvdr.py` (the deferred queue is empty).
 - **Dual-array triangulation (Phase B, `src/live/{triangulation,kit-selector,multi-array-combiner}.ts`).** A
   zero-dep 2D-position layer for **two** arrays — fuse their bearings into a room-space fix that resolves
   front/back. `triangulation.ts` (port of `fence.py`): `fusePosition` (ray-cast from each kit pose →

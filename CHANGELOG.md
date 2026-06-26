@@ -11,6 +11,12 @@ The JSON **config schema** is versioned independently via `CONFIG_VERSION`
 ## [Unreleased]
 
 ### Added
+- **RTF-MVDR (`beam: 'rtfMvdr'`)** — data-estimated steering. A third **talker-gated** covariance gives a
+  target field; per FFT bin, the **GEVD** principal generalized eigenvector of `(R_target, R_noise)` is the
+  source's **relative transfer function** (the real source→mic transfer), which replaces the plane-wave manifold
+  on bins that cross-check against the look (cosine ≥ `RTF_DOA_MIN_COS`). Builds on the measured-R MVDR; the GEVD
+  is a zero-dep inverse-free power iteration (in place of LAPACK `eigh`). Port of the Python `rtf_mvdr.py`;
+  adversarial DSP review fix folded in (the GEVD noise loading is the beam loading, not the function default).
 - **Data-adaptive measured-R MVDR (`beam: 'mvdr'`, A3b)** — closes the deferred Phase-A item. A second
   **noise-gated** `StreamingCovarianceAccumulator` (`accumulate(channels, gate)`) folds the spatial covariance
   **only on VAD-silent frames**, so it learns the room noise field without nulling the talker (cold-start does

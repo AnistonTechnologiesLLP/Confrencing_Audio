@@ -741,7 +741,13 @@ null depth/count are bounded by the array (`M−1` nulls on a small 40 mm ring).
   talker; cold-start doesn't train, warmup matches the Python), and feeds that measured covariance into the
   per-bin solve via `FreqDomainBeam.setMeasured`. It nulls the actual measured interference rather than an
   assumed-isotropic field. Default-off byte-identical; the trace-relative loading is floored so the audio-path
-  solve never goes singular. RTF-MVDR is the remaining deferred refinement.
+  solve never goes singular.
+- **`beam: 'rtfMvdr'`** — **RTF-MVDR**: data-estimated steering. A third **talker-gated** covariance gives a
+  target field; per FFT bin, the **GEVD** principal generalized eigenvector of `(R_target, R_noise)` is the
+  source's **relative transfer function** `h` (the real source→mic transfer — reverberation, near-field,
+  per-capsule gain/phase mismatch). It replaces the idealized plane-wave steering on bins where it cross-checks
+  against the look (cosine ≥ 0.5); low-confidence bins keep the plane-wave manifold. Zero-dep (the GEVD is a
+  pure-TS inverse-free power iteration in place of LAPACK `eigh` — same formulation, numerically close).
 ### Dual-array triangulation (Phase B)
 
 A zero-dependency 2D-position layer for **two** arrays. Each array reports a bearing to the talker; crossing the
