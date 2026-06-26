@@ -9,6 +9,7 @@ import {
 } from '../beamformer/geometry.js';
 import { diffuseCoherence, solve, steeringVector } from '../beamformer/beamformer.js';
 import type { Direction } from '../beamformer/steering.js';
+import { estimateRtfGevd, rtfCosine, RTF_DOA_MIN_COS, RTF_LOADING } from './rtf-mvdr.js';
 
 /** Diagonal loading for the superdirective solve (Python `DEFAULT_SUPERDIRECTIVE_LOADING`). */
 export const DEFAULT_SUPERDIRECTIVE_LOADING = 0.05;
@@ -23,8 +24,14 @@ export const NULL_LOOK_GUARD_DEG = 5.0;
 export interface MeasuredNoise {
   /** rfft bin indices that carry a measured covariance. */
   bandBins: readonly number[];
-  /** `cov[i]` = the M×M Hermitian covariance for bin `bandBins[i]` (full channels). */
+  /** `cov[i]` = the M×M Hermitian NOISE covariance for bin `bandBins[i]` (full channels). */
   cov: readonly Complex[][][];
+  /**
+   * RTF-MVDR: `target[i]` = the M×M Hermitian TARGET covariance for bin `bandBins[i]`. When present, the
+   * plane-wave steering is replaced by the GEVD relative-transfer-function on bins that cross-check (cosine ≥
+   * {@link RTF_DOA_MIN_COS}); absent ⇒ plain measured-R MVDR with the plane-wave manifold.
+   */
+  target?: readonly Complex[][][];
 }
 
 export interface BeamWeightOptions {
@@ -102,6 +109,18 @@ export function computeBeamWeights(
     if (measured && mi !== undefined) {
       const cov = measured.cov[mi]!;
       const rn: Complex[][] = idx.map((ri) => idx.map((ci) => ({ ...cov[ri]![ci]! })));
+      // RTF-MVDR: swap the plane-wave manifold for the data-estimated RTF on this bin when it cross-checks
+      // against the look (cosine ≥ RTF_DOA_MIN_COS). Uses the UNLOADED target+noise active submatrices;
+      // estimateRtfGevd applies its own loading. `a` is mutated in place and feeds the solve below.
+      if (measured.target) {
+        const covT = measured.target[mi]!;
+        const tActive = idx.map((ri) => idx.map((ci) => covT[ri]![ci]!));
+        const nActive = idx.map((ri) => idx.map((ci) => cov[ri]![ci]!));
+        const h = estimateRtfGevd(tActive, nActive, RTF_LOADING);
+        if (rtfCosine(h, a) >= RTF_DOA_MIN_COS) {
+          for (let i = 0; i < na; i++) a[i] = h[i]!;
+        }
+      }
       let trSum = 0;
       for (let i = 0; i < na; i++) trSum += rn[i]![i]!.re;
       // trace-relative loading, floored at MVDR_LOADING_FLOOR so a near-zero-trace measured cell can't

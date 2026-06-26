@@ -81,3 +81,5 @@ export {
   type AudioInputInfo, type WebAudioAdapterOptions,
 } from './web-audio-adapter.js';
 export { WEB_AUDIO_PROCESSOR_SOURCE, WEB_AUDIO_PROCESSOR_NAME } from './web-audio-processor.js';
+
+export { estimateRtfGevd, rtfCosine, RTF_DOA_MIN_COS, RTF_LOADING } from './rtf-mvdr.js';
