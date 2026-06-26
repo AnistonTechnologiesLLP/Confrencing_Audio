@@ -47,7 +47,7 @@ function vnorm(x: readonly Complex[]): number {
   return Math.sqrt(s);
 }
 
-function trivialRtf(m: number): Complex[] {
+function unitE0(m: number): Complex[] {
   const v: Complex[] = Array.from({ length: m }, () => complex(0, 0));
   v[0] = complex(1, 0);
   return v;
@@ -55,9 +55,10 @@ function trivialRtf(m: number): Complex[] {
 
 /**
  * Single-band RTF via the principal generalized eigenvector of `(rTarget, rNoise)`. Returns unit-norm `h`
- * (length M); a degenerate band falls back to the trivial unit vector `e0` (which the cosine gate then
- * rejects, keeping the plane-wave steering). `rNoise` is trace-relatively diagonally loaded for a
- * positive-definite generalized problem.
+ * (length M); a degenerate eigensolve falls back (like Python) to `v = e0` then `h = normalize(Rn·e0)` (the
+ * normalized first column of the loaded noise covariance — NOT bare `e0`, which would spuriously pass the
+ * cosine gate on a reduced array), and an all-zero `Rn·v` returns zeros (the cosine gate then rejects it).
+ * `rNoise` is trace-relatively diagonally loaded for a positive-definite generalized problem.
  */
 export function estimateRtfGevd(rTarget: readonly Complex[][], rNoise: readonly Complex[][], loading: number = RTF_LOADING): Complex[] {
   const m = rNoise.length;
@@ -69,21 +70,27 @@ export function estimateRtfGevd(rTarget: readonly Complex[][], rNoise: readonly 
 
   // power iteration on Rn⁻¹ rTarget → principal generalized eigenvector v (A v = λ Rn v, max λ)
   let v: Complex[] = Array.from({ length: m }, () => complex(1 / Math.sqrt(m), 0));
+  let degenerate = false;
   for (let it = 0; it < RTF_POWER_ITERS; it++) {
     const w = matvec(rTarget, v); // rTarget · v
     let y: Complex[];
     try {
       y = solve(Rn, w); // Rn⁻¹ (rTarget v)
     } catch {
-      return trivialRtf(m); // singular despite loading → degenerate
+      degenerate = true; // singular despite loading
+      break;
     }
     const nrm = vnorm(y);
-    if (nrm < 1e-20) return trivialRtf(m);
+    if (nrm < 1e-20) {
+      degenerate = true;
+      break;
+    }
     v = y.map((c) => complex(c.re / nrm, c.im / nrm));
   }
+  if (degenerate) v = unitE0(m); // Python: except → v = e0, then h = normalize(Rn·v)
   const hb = matvec(Rn, v); // h = Rn · v
   const hn = vnorm(hb);
-  if (hn < 1e-20) return trivialRtf(m);
+  if (hn < 1e-20) return Array.from({ length: m }, () => complex(0, 0)); // Python: h = 0.0 (gate rejects)
   return hb.map((c) => complex(c.re / hn, c.im / hn));
 }
 

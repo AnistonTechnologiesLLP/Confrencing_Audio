@@ -9,7 +9,7 @@ import {
 } from '../beamformer/geometry.js';
 import { diffuseCoherence, solve, steeringVector } from '../beamformer/beamformer.js';
 import type { Direction } from '../beamformer/steering.js';
-import { estimateRtfGevd, rtfCosine, RTF_DOA_MIN_COS, RTF_LOADING } from './rtf-mvdr.js';
+import { estimateRtfGevd, rtfCosine, RTF_DOA_MIN_COS } from './rtf-mvdr.js';
 
 /** Diagonal loading for the superdirective solve (Python `DEFAULT_SUPERDIRECTIVE_LOADING`). */
 export const DEFAULT_SUPERDIRECTIVE_LOADING = 0.05;
@@ -116,7 +116,9 @@ export function computeBeamWeights(
         const covT = measured.target[mi]!;
         const tActive = idx.map((ri) => idx.map((ci) => covT[ri]![ci]!));
         const nActive = idx.map((ri) => idx.map((ci) => cov[ri]![ci]!));
-        const h = estimateRtfGevd(tActive, nActive, RTF_LOADING);
+        // GEVD noise loading = the beam's loading (Python's call site passes self._loading = 0.05, NOT the
+        // estimate_rtf_gevd function default of 1e-3).
+        const h = estimateRtfGevd(tActive, nActive, loading);
         if (rtfCosine(h, a) >= RTF_DOA_MIN_COS) {
           for (let i = 0; i < na; i++) a[i] = h[i]!;
         }

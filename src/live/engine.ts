@@ -306,11 +306,14 @@ export class LiveEngine {
                 if (nsnap) {
                   // RTF-MVDR: also pass the talker covariance once it has warmed → the beam swaps in the
                   // GEVD steering on cross-checked bins. Until then (or in plain 'mvdr'), measured-R only.
+                  // The two accumulators share band config, so their bands are identical by construction;
+                  // guard the pairing anyway so target[mi] can never silently align to the wrong bin.
                   const tsnap = this.targetCov ? this.targetCov.snapshot() : null;
+                  const bandsMatch = tsnap !== null && tsnap.band.length === nsnap.band.length && tsnap.band.every((b, i) => b === nsnap.band[i]);
                   this.freqBeam.setMeasured({
                     bandBins: nsnap.band,
                     cov: nsnap.rBand,
-                    ...(tsnap ? { target: tsnap.rBand } : {}),
+                    ...(bandsMatch && tsnap ? { target: tsnap.rBand } : {}),
                   });
                 }
               }
