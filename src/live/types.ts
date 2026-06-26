@@ -147,7 +147,7 @@ export interface LiveConfig {
   azimuthDeg?: number;
   offNadirDeg?: number;
   taps?: number;
-  beam?: 'delaySum' | 'freqDomain';
+  beam?: 'delaySum' | 'freqDomain' | 'mvdr' | 'rtfMvdr';
   autoSteer?: AutoSteerConfig;
   nulls?: NullsConfig;
   cleaning?: CleaningConfig;

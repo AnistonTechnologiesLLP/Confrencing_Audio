@@ -68,6 +68,7 @@ export {
 } from './triangulation.js';
 export { KitSelector, DEFAULT_SWITCH_MARGIN, DEFAULT_KIT_HOLD_SECONDS, DEFAULT_SPEECH_THRESHOLD, type SelectionState, type KitSelectorOptions } from './kit-selector.js';
 export { MultiArrayCombiner, crossfadeGains, DEFAULT_CROSSFADE_BLOCKS, type KitBlock, type CombinedOutput, type MultiArrayCombinerOptions } from './multi-array-combiner.js';
+export { MultiArrayEngine, type KitSpec, type MultiArrayEngineOptions } from './multi-array-engine.js';
 // Phase C — DeepFilterNet3 via ONNX
 export { StreamingResampler, type ResamplerOptions } from './resampler.js';
 export {
@@ -80,3 +81,5 @@ export {
   type AudioInputInfo, type WebAudioAdapterOptions,
 } from './web-audio-adapter.js';
 export { WEB_AUDIO_PROCESSOR_SOURCE, WEB_AUDIO_PROCESSOR_NAME } from './web-audio-processor.js';
+
+export { estimateRtfGevd, rtfCosine, RTF_DOA_MIN_COS, RTF_LOADING } from './rtf-mvdr.js';

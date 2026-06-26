@@ -37,6 +37,10 @@ export class LiveEngine {
   private _offNadirDeg: number;
   private cb: ((out: BeamOutput) => void) | null = null;
   private cov: StreamingCovarianceAccumulator | null = null;
+  private noiseCov: StreamingCovarianceAccumulator | null = null; // noise-gated covariance for data-adaptive MVDR (A3b)
+  private targetCov: StreamingCovarianceAccumulator | null = null; // talker-gated covariance for RTF-MVDR steering
+  private mvdr = false; // uses a measured noise-R (beam 'mvdr' OR 'rtfMvdr')
+  private rtf = false; // RTF-MVDR: also estimate the steering from a talker-gated covariance
   private autosteer: AutoSteerController | null = null;
   private detectionHops = 11;
   private lastFrames = 0;
@@ -66,8 +70,10 @@ export class LiveEngine {
     this._azimuthDeg = config.azimuthDeg ?? 0;
     this._offNadirDeg = config.offNadirDeg ?? 90;
     const sr = config.sampleRate ?? 44100;
+    this.rtf = config.beam === 'rtfMvdr';
+    this.mvdr = config.beam === 'mvdr' || this.rtf; // both run a measured noise-R; rtfMvdr also adds the RTF
     this.beam =
-      config.beam === 'freqDomain'
+      config.beam === 'freqDomain' || this.mvdr
         ? new FreqDomainBeam(config.geom, sr, { offNadirDeg: this._offNadirDeg })
         : new StreamingDelaySumBeam(config.geom, sr, {
             ...(config.taps !== undefined ? { taps: config.taps } : {}),
@@ -89,11 +95,24 @@ export class LiveEngine {
     // --- Phase 2: optional auto-steer / multi-beam DOA cycle ---
     const as = config.autoSteer;
     const mb0 = config.multiBeam;
-    if ((as && as.mode !== 'manual') || mb0 !== undefined) {
-      // Build the covariance accumulator whenever auto-steer OR multi-beam needs DOA.
+    if ((as && as.mode !== 'manual') || mb0 !== undefined || this.mvdr) {
+      // Build the covariance accumulator whenever auto-steer / multi-beam / data-adaptive MVDR needs DOA.
       this.cov = new StreamingCovarianceAccumulator({ channels: config.geom.nChannels, sampleRate: config.sampleRate ?? 44100 });
       this.detectionHops = as?.detectionHops ?? mb0?.detectionHops ?? 11;
       this.doaOpts = as?.doa ?? {};
+    }
+    if (this.mvdr) {
+      // A second, NOISE-GATED covariance for the data-adaptive MVDR beam (folds only on VAD-silent frames so it
+      // doesn't null the talker). Snapshotted into the freq-domain beam as the measured-R provider.
+      // warmupFrames 16 matches the Python `_NOISE_WARMUP_FRAMES` — the measured-R must be well-converged
+      // (4 folded frames at α=0.05 is ~18% of steady-state) before it feeds the solve, or the null is weak/noisy.
+      this.noiseCov = new StreamingCovarianceAccumulator({ channels: config.geom.nChannels, sampleRate: config.sampleRate ?? 44100, warmupFrames: 16 });
+    }
+    if (this.rtf) {
+      // RTF-MVDR: a THIRD covariance, gated on talker-present frames (the complement of the noise gate).
+      // The GEVD of (target, noise) yields the data-estimated steering. Same warmup as the noise cov; the
+      // beam only uses the RTF once BOTH covariances have warmed (else it falls back to plane-wave measured-R).
+      this.targetCov = new StreamingCovarianceAccumulator({ channels: config.geom.nChannels, sampleRate: config.sampleRate ?? 44100, warmupFrames: 16 });
     }
     if (as && as.mode !== 'manual') {
       this._mode = as.mode;
@@ -267,13 +286,37 @@ export class LiveEngine {
         this.meter.update(mono);
         // Phase 2: feed covariance + run DOA/steer on the configured hop cadence.
         // Runs when EITHER auto-steer or multi-beam is configured (both need DOA).
-        if (this.cov && (this.autosteer || this.mixer)) {
+        if (this.cov && (this.autosteer || this.mixer || this.mvdr)) {
           this.cov.accumulate(channels);
+          // A3b: accumulate the NOISE-gated covariance (fold only on VAD-silent frames) for data-adaptive MVDR.
+          // Cold start (no DOA yet) → DON'T fold: a talker speaking at startup must not enter the noise R
+          // (it would later be nulled). Matches the Python noise-gate default of False. Train only once a
+          // DOA cycle has confirmed a VAD-silent frame.
+          if (this.noiseCov) this.noiseCov.accumulate(channels, this.lastDoa ? !this.lastDoa.active : false);
+          // RTF-MVDR: accumulate the TALKER-gated covariance (the complement — fold only when a talker IS active).
+          if (this.targetCov) this.targetCov.accumulate(channels, this.lastDoa ? this.lastDoa.active : false);
           if (this.cov.framesSeen - this.lastFrames >= this.detectionHops) {
             this.lastFrames = this.cov.framesSeen;
             const snap = this.cov.snapshot();
             if (snap) {
               this.lastDoa = detect(snap.rBand, snap.freqs, this.config.geom, this.doaOpts);
+              // A3b: push the measured noise covariance into the beam → data-adaptive MVDR (nulls the measured field).
+              if (this.noiseCov && this.freqBeam) {
+                const nsnap = this.noiseCov.snapshot();
+                if (nsnap) {
+                  // RTF-MVDR: also pass the talker covariance once it has warmed → the beam swaps in the
+                  // GEVD steering on cross-checked bins. Until then (or in plain 'mvdr'), measured-R only.
+                  // The two accumulators share band config, so their bands are identical by construction;
+                  // guard the pairing anyway so target[mi] can never silently align to the wrong bin.
+                  const tsnap = this.targetCov ? this.targetCov.snapshot() : null;
+                  const bandsMatch = tsnap !== null && tsnap.band.length === nsnap.band.length && tsnap.band.every((b, i) => b === nsnap.band[i]);
+                  this.freqBeam.setMeasured({
+                    bandBins: nsnap.band,
+                    cov: nsnap.rBand,
+                    ...(bandsMatch && tsnap ? { target: tsnap.rBand } : {}),
+                  });
+                }
+              }
               if (this.mixer && this.slotTracker) {
                 const targets = snapTargets(this.lastDoa.detections.map((d) => ({ azimuthDeg: d.azimuthDeg, salienceDb: d.salienceDb })));
                 this.lastSlots = this.slotTracker.update(targets, this._tSec);

@@ -1,7 +1,7 @@
 import { ArrayGeometry, type Complex } from '../beamformer/geometry.js';
 import { bearingDirection } from '../beamformer/beamformer.js';
 import { FftRadix2 } from './fft.js';
-import { computeBeamWeights, DEFAULT_SUPERDIRECTIVE_LOADING } from './mvdr-solver.js';
+import { computeBeamWeights, DEFAULT_SUPERDIRECTIVE_LOADING, type MeasuredNoise } from './mvdr-solver.js';
 import type { LiveBeam } from './beam.js';
 
 /** STFT frame for the frequency-domain beam (hop = frame/2). */
@@ -47,6 +47,7 @@ export class FreqDomainBeam implements LiveBeam {
   private azimuthDeg = 0;
   private offNadirDeg: number;
   private nullsDeg: number[] = [];
+  private measured: MeasuredNoise | null = null; // data-adaptive MVDR noise covariance (A3b), or null = superdirective
 
   constructor(geom: ArrayGeometry, sampleRate: number, opts: FreqDomainBeamOptions = {}) {
     this.geom = geom;
@@ -78,7 +79,20 @@ export class FreqDomainBeam implements LiveBeam {
   private recompute(): void {
     const look = bearingDirection(this.azimuthDeg, this.offNadirDeg);
     const nullDirs = this.nullsDeg.map((az) => bearingDirection(az, this.offNadirDeg));
-    this.W = computeBeamWeights(this.geom, this.freqsHz, look, nullDirs, { loading: this.loading });
+    this.W = computeBeamWeights(this.geom, this.freqsHz, look, nullDirs, {
+      loading: this.loading,
+      ...(this.measured !== null ? { measured: this.measured } : {}),
+    });
+  }
+
+  /**
+   * Set (or clear) the measured noise covariance — turns the beam **data-adaptive MVDR**: it nulls the
+   * *measured* interferer field on the DOA-band bins, falling back to analytic superdirective elsewhere and
+   * when `null`. The owner (engine) snapshots a noise-gated covariance and pushes it here off the audio path.
+   */
+  setMeasured(measured: MeasuredNoise | null): void {
+    this.measured = measured;
+    this.recompute();
   }
 
   setLook(azimuthDeg: number, offNadirDeg: number = this.offNadirDeg): void {

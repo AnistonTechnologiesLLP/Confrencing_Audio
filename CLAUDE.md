@@ -167,8 +167,17 @@ Key structural facts that span files:
   `nomAutomix` (`LiveConfig.multiBeam`) run N beams each nulling the others, gated + NOM-automixed
   (`BeamOutput.multiBeam`); multi-beam brings its own DOA. The per-bin solve runs only on re-steer (single-thread
   ⇒ atomic publish), never per block; ~35 ms latency when active. **Verified bit-exact vs the Python**
-  (`polaris_beamformer.py:_FreqDomainBeam`, `multibeam.py`). Zero-dep. Deferred: data-adaptive measured-R MVDR
-  (needs a noise-gated covariance), RTF-MVDR.
+  (`polaris_beamformer.py:_FreqDomainBeam`, `multibeam.py`). Zero-dep. **Data-adaptive measured-R MVDR is now
+  done (A3b):** `LiveConfig.beam:'mvdr'` builds a second **noise-gated** `StreamingCovarianceAccumulator`
+  (`accumulate(channels, gate)` folds R only on VAD-silent frames so the talker isn't nulled; cold-start does
+  NOT fold, warmup 16 = Python `_NOISE_WARMUP_FRAMES`), whose `snapshot().{rBand,band}` feeds
+  `FreqDomainBeam.setMeasured` → `computeBeamWeights({measured})` overlays the measured R on the DOA-band bins
+  (trace-relative loading floored at `MVDR_LOADING_FLOOR`). Default-off byte-identical. **RTF-MVDR is also done**
+  (`beam:'rtfMvdr'`, `rtf-mvdr.ts`): a THIRD **talker-gated** covariance gives a target R; the per-bin **GEVD**
+  principal generalized eigenvector of `(R_target, R_noise)` is the data-estimated steering (relative transfer
+  function), swapped in for the plane-wave manifold only where it cross-checks against the look (cosine ≥
+  `RTF_DOA_MIN_COS`). The GEVD uses **inverse-free power iteration** (zero-dep) in place of LAPACK `eigh` —
+  faithful in formulation, numerically close not bit-exact. Port of `rtf_mvdr.py` (the deferred queue is empty).
 - **Dual-array triangulation (Phase B, `src/live/{triangulation,kit-selector,multi-array-combiner}.ts`).** A
   zero-dep 2D-position layer for **two** arrays — fuse their bearings into a room-space fix that resolves
   front/back. `triangulation.ts` (port of `fence.py`): `fusePosition` (ray-cast from each kit pose →
@@ -177,8 +186,12 @@ Key structural facts that span files:
   (port of `multikit.py:KitSelector`) selects the active kit by the level-invariant speech-presence score.
   `multi-array-combiner.ts` `MultiArrayCombiner` (port of `MultiKitController._produce`): scores → select →
   equal-power cross-fade → ONE combined AGC, with the fence veto dropping a rejected kit AND ducking the output
-  (−60 dB) when out-of-fence. Pure/testable; the two-`LiveEngine` host wiring (two adapters, clock sync) is a
-  thin node concern, deferred. Triangulation + selector verified faithful to the Python by review.
+  (−60 dB) when out-of-fence. Pure/testable. The two-`LiveEngine` host wiring is now done:
+  `multi-array-engine.ts` `MultiArrayEngine` wraps two single-array `LiveEngine`s (one per kit), pairs their
+  per-block beamformed outputs (combine only when both kits are fresh; mismatched block lengths clamp to the
+  shorter — never NaN), and feeds the combiner. It **rejects per-kit AGC at construction** (the combiner owns
+  the single combined AGC). Testable with two `ManualCaptureAdapter`s; real two-device clock handling stays the
+  node host's job. Triangulation + selector verified faithful to the Python by review.
 
 - **DeepFilterNet3 cleaning (Phase C, `src/live/{resampler,dfn3-cleaner}.ts`).** An opt-in neural denoiser,
   core kept zero-dep. `resampler.ts` `StreamingResampler` is a from-scratch **phase-coherent streaming
@@ -188,9 +201,17 @@ Key structural facts that span files:
   lag-aligned dry/wet `mix`; realtime-safe (raw passthrough on prime/underrun/error). The ONNX **session is
   injected** (`Dfn3Session` interface) so `src/live/` stays browser-safe — tests use a stub. `engine.ts`:
   `cleaning.engine: 'dfn3'` + a host `cleaning.dfn3Session` build it, else fall back to `gate`. Port of
-  `deepfilter_cleaner.py` — reviewed FAITHFUL (polyphase reproduced to machine epsilon). **Deferred host work:**
-  the real `onnxruntime`-backed session factory (node-only, optional peer-dep, the model is NOT bundled) +
-  bridging async `onnxruntime-node.run()` to the sync `Dfn3Session` seam (a worker thread / sync runtime).
+  `deepfilter_cleaner.py` — reviewed FAITHFUL (polyphase reproduced to machine epsilon). **The node host
+  session is now done:** `src/live-node/dfn3-session.ts` `createDfn3SyncSession` bridges the async
+  `onnxruntime-node.run()` to the **sync** `Dfn3Session` seam via a **worker thread + SharedArrayBuffer +
+  Atomics**. A two-word `[reqSeq, respSeq]` **generation protocol** makes a timeout recoverable (a slow
+  worker's late response carries an old seq → the next `run()` skips it; no stale read, no permanent brick);
+  only a worker crash is terminal. The worker (`DFN3_ONNX_WORKER_SOURCE`, an injected source string) loads the
+  model eagerly at spawn and falls back to **identity passthrough on any error** (missing peer-dep/model). The
+  model is NOT bundled (`modelPath` is host-supplied); the host that creates the session **owns `close()`**.
+  `run()` blocks the calling thread by design (the sync seam, like the Python's `ort`) — `timeoutMs` is small
+  so a hung worker can't stall the audio thread. Stub-tested in CI (no real ONNX). Deferred: bundling/wiring a
+  real model + measuring live latency on hardware.
 
 - **Browser Web-Audio capture (Phase D, `src/live/{web-audio-adapter,web-audio-processor}.ts`).** A
   `CaptureAdapter` over `getUserMedia` + `AudioWorklet` so the live console can run without the Node host.
